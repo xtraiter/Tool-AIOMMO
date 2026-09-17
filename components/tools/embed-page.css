@@ -1,0 +1,35 @@
+.embed-empty {
+  border: 2px dashed var(--line);
+  border-radius: 16px;
+  padding: 56px 20px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.embed-empty svg { color: var(--accent); margin-bottom: 10px; }
+
+.embed-empty-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.embed-empty-hint {
+  font-size: 13px;
+}
+
+.embed-frame-wrap {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--panel);
+  height: 75vh;
+}
+
+.embed-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+}

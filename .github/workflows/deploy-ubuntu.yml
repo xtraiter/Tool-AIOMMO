@@ -1,0 +1,56 @@
+name: Deploy to Ubuntu Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ vars.AUTO_DEPLOY == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy over SSH
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH }}
+          PM2_APP_NAME: ${{ vars.PM2_APP_NAME }}
+        run: |
+          set -euo pipefail
+
+          PORT="${SERVER_PORT:-22}"
+
+          if [ -z "${SERVER_HOST}" ] || [ -z "${SERVER_USER}" ] || [ -z "${SERVER_SSH_KEY}" ] || [ -z "${SERVER_PATH}" ]; then
+            echo "Missing one or more required secrets: SERVER_HOST, SERVER_USER, SERVER_SSH_KEY, SERVER_PATH"
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "${SERVER_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${PORT}" -H "${SERVER_HOST}" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/deploy_key -p "${PORT}" "${SERVER_USER}@${SERVER_HOST}" "bash -se" <<EOF
+          set -euo pipefail
+
+          cd "${SERVER_PATH}"
+
+          git fetch origin main
+          git reset --hard origin/main
+
+          npm ci
+          npm run build
+
+          if command -v pm2 >/dev/null 2>&1; then
+            if [ -n "${PM2_APP_NAME}" ] && pm2 describe "${PM2_APP_NAME}" >/dev/null 2>&1; then
+              pm2 reload "${PM2_APP_NAME}" --update-env
+            else
+              pm2 restart all --update-env
+            fi
+          fi
+          EOF

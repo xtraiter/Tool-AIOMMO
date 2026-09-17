@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+dist/
+build/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Local build/deploy artifacts
+*.zip
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+admin.txt
+*.pem
+*.key
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

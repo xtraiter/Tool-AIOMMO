@@ -1,0 +1,18 @@
+/* Ambient particle-network canvas — mounted once, globally, in AppShell so it
+   runs behind every page. It pauses itself (via useBackgroundBusy) while any
+   tool is mid-export, since FFmpeg/ONNX work shouldn't compete with a
+   decorative canvas for CPU. */
+.tl-particles-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+  -webkit-mask-image: radial-gradient(ellipse 130% 110% at 50% 0%, black 55%, transparent 100%);
+  mask-image: radial-gradient(ellipse 130% 110% at 50% 0%, black 55%, transparent 100%);
+}
+
+.tl-particles-canvas.is-paused {
+  opacity: 0;
+}
