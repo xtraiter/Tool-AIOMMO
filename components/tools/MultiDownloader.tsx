@@ -4,6 +4,10 @@ import { useState } from "react";
 import { Download, Search, AlertCircle, Video, Music, Copy, Check } from "lucide-react";
 import "./tool-page.css";
 
+const VIDEO_FORMATS = [["mp4", "MP4"], ["mkv", "MKV"]] as const;
+const AUDIO_FORMATS = [["mp3", "MP3"], ["m4a", "M4A"], ["opus", "OPUS"], ["wav", "WAV"], ["flac", "FLAC"]] as const;
+const BITRATES = [320, 256, 192, 128, 96, 64];
+
 type VideoInfo = {
   platform?: string;
   title: string;
@@ -13,6 +17,7 @@ type VideoInfo = {
   duration: string | number;
   heights: number[];
   hasAudio: boolean;
+  maxAbr: number;
   source: string;
 };
 
@@ -28,7 +33,8 @@ export function MultiDownloader() {
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<VideoInfo | null>(null);
   const [error, setError] = useState("");
-  const [format, setFormat] = useState<"mp4" | "mp3">("mp4");
+  const [format, setFormat] = useState<string>("mp4");
+  const [bitrate, setBitrate] = useState(320);
   const [height, setHeight] = useState<number>(0);
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState<"" | "title" | "desc">("");
@@ -51,6 +57,7 @@ export function MultiDownloader() {
       setInfo(data);
       setHeight(data.heights?.[0] ?? 0);
       setFormat(data.heights?.length ? "mp4" : "mp3");
+      setBitrate(320);
     } catch (err: any) {
       setError(err.message || "Có lỗi xảy ra khi lấy dữ liệu.");
     } finally {
@@ -64,7 +71,9 @@ export function MultiDownloader() {
     setError("");
     try {
       const qs = new URLSearchParams({ url: info.source || url.trim(), type: format });
-      if (format === "mp4" && height) qs.set("height", String(height));
+      const isVideo = format === "mp4" || format === "mkv";
+      if (isVideo && height) qs.set("height", String(height));
+      if (!isVideo && format !== "wav" && format !== "flac") qs.set("abr", String(bitrate));
       const res = await fetch(`/api/download/file?${qs}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -85,6 +94,9 @@ export function MultiDownloader() {
       setDownloading(false);
     }
   };
+
+  const isVideoFormat = format === "mp4" || format === "mkv";
+  const isLossless = format === "wav" || format === "flac";
 
   const copy = async (text: string, what: "title" | "desc") => {
     await navigator.clipboard.writeText(text);
@@ -157,27 +169,21 @@ export function MultiDownloader() {
             <div className="tool-row" style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: '16px' }}>
               <div className="tool-field" style={{ flex: '0 0 auto', minWidth: 'unset' }}>
                 <label>Định dạng</label>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button
-                    className={format === "mp4" ? "tool-btn" : "tool-btn tool-btn-secondary"}
-                    style={{ padding: '8px 14px' }}
-                    disabled={!info.heights.length}
-                    onClick={() => setFormat("mp4")}
-                  >
-                    <Video size={14} /> MP4
-                  </button>
-                  <button
-                    className={format === "mp3" ? "tool-btn" : "tool-btn tool-btn-secondary"}
-                    style={{ padding: '8px 14px' }}
-                    disabled={!info.hasAudio}
-                    onClick={() => setFormat("mp3")}
-                  >
-                    <Music size={14} /> MP3
-                  </button>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {VIDEO_FORMATS.map(([id, label]) => (
+                    <button key={id} className={format === id ? "tool-btn" : "tool-btn tool-btn-secondary"} style={{ padding: '8px 12px' }} disabled={!info.heights.length} onClick={() => setFormat(id)}>
+                      <Video size={14} /> {label}
+                    </button>
+                  ))}
+                  {AUDIO_FORMATS.map(([id, label]) => (
+                    <button key={id} className={format === id ? "tool-btn" : "tool-btn tool-btn-secondary"} style={{ padding: '8px 12px' }} disabled={!info.hasAudio} onClick={() => setFormat(id)}>
+                      <Music size={14} /> {label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {format === "mp4" && info.heights.length > 0 && (
+              {isVideoFormat && info.heights.length > 0 && (
                 <div className="tool-field" style={{ flex: '0 0 auto', minWidth: '140px' }}>
                   <label>Chất lượng</label>
                   <select value={height} onChange={(e) => setHeight(Number(e.target.value))}>
@@ -188,10 +194,27 @@ export function MultiDownloader() {
                 </div>
               )}
 
+              {!isVideoFormat && !isLossless && (
+                <div className="tool-field" style={{ flex: '0 0 auto', minWidth: '140px' }}>
+                  <label>Chất lượng âm thanh</label>
+                  <select value={bitrate} onChange={(e) => setBitrate(Number(e.target.value))}>
+                    {BITRATES.map((b) => (
+                      <option key={b} value={b}>{b} kbps</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <button className="tool-btn" onClick={handleDownload} disabled={downloading}>
                 <Download size={16} /> {downloading ? "Đang xử lý trên máy chủ..." : `Tải ${format.toUpperCase()}`}
               </button>
             </div>
+            {!isVideoFormat && info.maxAbr > 0 && (
+              <p className="tool-status-text">
+                Âm thanh gốc của nguồn tối đa khoảng {info.maxAbr} kbps — chọn bitrate cao hơn mức này không làm tăng chất lượng thật.
+                {isLossless ? " WAV/FLAC là định dạng không nén nên file lớn, nhưng không cải thiện âm thanh gốc." : ""}
+              </p>
+            )}
             {downloading && (
               <p className="tool-status-text">Máy chủ đang tải và chuyển đổi file, có thể mất từ vài giây đến vài phút tuỳ độ dài video. Vui lòng không đóng trang.</p>
             )}

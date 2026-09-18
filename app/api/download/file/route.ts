@@ -10,6 +10,15 @@ import { rateLimited } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
+const VIDEO_FORMATS = ["mp4", "mkv"] as const;
+const AUDIO_FORMATS = ["mp3", "m4a", "opus", "wav", "flac"] as const;
+const LOSSLESS = new Set(["wav", "flac"]);
+const MIME: Record<string, string> = {
+  mp4: "video/mp4", mkv: "video/x-matroska", mp3: "audio/mpeg", m4a: "audio/mp4",
+  opus: "audio/opus", wav: "audio/wav", flac: "audio/flac",
+};
+const BITRATES = [64, 96, 128, 192, 256, 320];
+
 const MAX_CONCURRENT = 3;
 let active = 0;
 
@@ -22,10 +31,14 @@ export async function GET(req: NextRequest) {
   }
 
   const params = req.nextUrl.searchParams;
-  const type = params.get("type");
-  if (type !== "mp4" && type !== "mp3") {
+  const type = params.get("type") || "";
+  const isVideo = (VIDEO_FORMATS as readonly string[]).includes(type);
+  const isAudio = (AUDIO_FORMATS as readonly string[]).includes(type);
+  if (!isVideo && !isAudio) {
     return NextResponse.json({ error: "Định dạng không hợp lệ." }, { status: 400 });
   }
+  const requestedBitrate = parseInt(params.get("abr") || "", 10);
+  const bitrate = BITRATES.includes(requestedBitrate) ? requestedBitrate : 320;
   const height = Math.min(Math.max(parseInt(params.get("height") || "1080", 10) || 1080, 144), 4320);
 
   active++;
@@ -35,15 +48,18 @@ export async function GET(req: NextRequest) {
     dir = await mkdtemp(path.join(tmpdir(), "aiommo-dl-"));
 
     const common = ["--no-playlist", "--no-warnings", "--restrict-filenames", "--max-filesize", "300M", "-o", path.join(dir, "%(title).80s.%(ext)s")];
-    const options =
-      type === "mp3"
-        ? [...common, "-f", "ba/b", "-x", "--audio-format", "mp3", "--audio-quality", "0"]
-        : [
-            ...common,
-            "-f", `bv*[height<=${height}]+ba/b[height<=${height}]/b`,
-            "-S", "vcodec:h264,acodec:aac",
-            "--merge-output-format", "mp4",
-          ];
+    const options = isAudio
+      ? [
+          ...common, "-f", "ba/b", "-x", "--audio-format", type,
+          ...(LOSSLESS.has(type) ? [] : ["--audio-quality", `${bitrate}K`]),
+        ]
+      : [
+          ...common,
+          "-f", `bv*[height<=${height}]+ba/b[height<=${height}]/b`,
+          ...(type === "mp4" ? ["-S", "vcodec:h264,acodec:aac"] : []),
+          "--merge-output-format", type,
+          "--remux-video", type,
+        ];
 
     await ytDlpDownload(options, safe.href);
 
@@ -59,7 +75,7 @@ export async function GET(req: NextRequest) {
 
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       headers: {
-        "Content-Type": type === "mp3" ? "audio/mpeg" : "video/mp4",
+        "Content-Type": MIME[type],
         "Content-Length": String(size),
         "Content-Disposition": `attachment; filename="${files[0].replace(/[^\w.\-]/g, "_")}"`,
         "Cache-Control": "no-store",

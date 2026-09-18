@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
           .map((f) => f.height as number)
       ),
     ].sort((a, b) => b - a);
+    const maxAbr = Math.round(Math.max(0, ...formats.filter((f) => f.acodec && f.acodec !== "none" && typeof f.abr === "number").map((f) => f.abr)));
     const hasAudio = formats.some((f) => f.acodec && f.acodec !== "none");
 
     return NextResponse.json({
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
       duration: data.duration_string || data.duration || 0,
       heights,
       hasAudio,
+      maxAbr,
       source: data.webpage_url || safe.href,
     });
   } catch (error: any) {
