@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
+import { assertPublicHttpUrl } from "@/lib/safeUrl";
+import { rateLimited } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
+  if (rateLimited(req, "bulk")) {
+    return NextResponse.json({ error: "Bạn thao tác quá nhanh, vui lòng thử lại sau." }, { status: 429 });
+  }
   try {
     const body = await req.json();
     const { urls } = body;
@@ -13,7 +18,8 @@ export async function POST(req: NextRequest) {
     const urlList = urls
       .split("\n")
       .map((u: string) => u.trim())
-      .filter((u: string) => u.startsWith("http"));
+      .filter((u: string) => u.startsWith("http"))
+      .slice(0, 20);
 
     if (urlList.length === 0) {
       return NextResponse.json({ error: "Không tìm thấy URL hợp lệ. Hãy đảm bảo mỗi link nằm trên 1 dòng riêng." }, { status: 400 });
@@ -28,7 +34,8 @@ export async function POST(req: NextRequest) {
     for (const url of urlList) {
       try {
         // --flat-playlist: chỉ lấy danh sách, không tải file
-        const { stdout, stderr } = await ytDlp(`--dump-json --no-warnings --flat-playlist "${url}"`);
+        const safe = await assertPublicHttpUrl(url);
+        const { stdout } = await ytDlp(["--dump-json", "--no-warnings", "--flat-playlist"], safe.href);
 
         if (!stdout) continue;
 

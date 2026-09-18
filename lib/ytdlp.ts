@@ -1,26 +1,23 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
-import path from "path";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
-/**
- * Tìm đường dẫn đúng tới yt-dlp trên cả Linux và Windows
- */
+/** Locate yt-dlp on Linux and Windows. */
 async function getYtDlpPath(): Promise<string> {
   const candidates = [
-    "/usr/local/bin/yt-dlp",   // Linux server (Ubuntu)
-    "/usr/bin/yt-dlp",          // Linux fallback
-    "yt-dlp",                   // PATH fallback (Windows dev)
-    "yt-dlp.exe",               // Windows explicit
+    "/usr/local/bin/yt-dlp",
+    "/usr/bin/yt-dlp",
+    "yt-dlp",
+    "yt-dlp.exe",
   ];
 
   for (const candidate of candidates) {
     try {
-      await execAsync(`"${candidate}" --version`);
+      await execFileAsync(candidate, ["--version"]);
       return candidate;
     } catch {
-      // thử cái tiếp theo
+      // try next
     }
   }
 
@@ -33,9 +30,13 @@ async function getYtDlpPath(): Promise<string> {
 
 let _ytDlpPath: string | null = null;
 
-export async function ytDlp(args: string): Promise<{ stdout: string; stderr: string }> {
+/**
+ * Runs yt-dlp without a shell. `url` is passed after `--` so it can never be
+ * parsed as an option or interpreted by a shell.
+ */
+export async function ytDlp(options: string[], url: string): Promise<{ stdout: string; stderr: string }> {
   if (!_ytDlpPath) {
     _ytDlpPath = await getYtDlpPath();
   }
-  return execAsync(`"${_ytDlpPath}" ${args}`, { timeout: 60000 });
+  return execFileAsync(_ytDlpPath, [...options, "--", url], { timeout: 60000, maxBuffer: 20 * 1024 * 1024 });
 }

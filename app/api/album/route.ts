@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
+import { assertPublicHttpUrl } from "@/lib/safeUrl";
+import { rateLimited } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
+  if (rateLimited(req, "album")) {
+    return NextResponse.json({ error: "Bạn thao tác quá nhanh, vui lòng thử lại sau." }, { status: 429 });
+  }
   try {
     const body = await req.json();
     const { url } = body;
@@ -10,10 +15,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Vui lòng cung cấp URL hợp lệ." }, { status: 400 });
     }
 
-    console.log(`[API/album] Đang trích xuất album: ${url}`);
+    const safe = await assertPublicHttpUrl(url);
+    console.log(`[API/album] Đang trích xuất album: ${safe.href}`);
 
     // yt-dlp dump-json với playlist để lấy từng ảnh/video trong bài viết
-    const { stdout, stderr } = await ytDlp(`--dump-json --no-warnings --flat-playlist "${url}"`);
+    const { stdout, stderr } = await ytDlp(["--dump-json", "--no-warnings", "--flat-playlist"], safe.href);
 
     if (!stdout || (stderr && stderr.includes("ERROR:"))) {
       return NextResponse.json({ error: "Không thể trích xuất album từ URL này. Hãy thử link khác." }, { status: 500 });
@@ -44,7 +50,7 @@ export async function POST(req: NextRequest) {
 
     if (items.length === 0) {
       // Thử lấy thông tin tổng quát (không phải playlist)
-      const { stdout: singleOut } = await ytDlp(`--dump-json --no-warnings "${url}"`);
+      const { stdout: singleOut } = await ytDlp(["--dump-json", "--no-warnings"], safe.href);
       const data = JSON.parse(singleOut.trim());
 
       if (data.thumbnail) {

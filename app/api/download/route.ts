@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
+import { assertPublicHttpUrl } from "@/lib/safeUrl";
+import { rateLimited } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
+  if (rateLimited(req, "download")) {
+    return NextResponse.json({ error: "Bạn thao tác quá nhanh, vui lòng thử lại sau." }, { status: 429 });
+  }
   try {
     const body = await req.json();
     const { url } = body;
@@ -10,10 +15,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Vui lòng cung cấp URL hợp lệ." }, { status: 400 });
     }
 
-    console.log(`[API] Đang trích xuất: ${url}`);
+    const safe = await assertPublicHttpUrl(url);
+    console.log(`[API] Đang trích xuất: ${safe.href}`);
 
     // Sử dụng yt-dlp để lấy thông tin JSON
-    const { stdout, stderr } = await ytDlp(`--dump-json --no-warnings --no-playlist "${url}"`);
+    const { stdout, stderr } = await ytDlp(["--dump-json", "--no-warnings", "--no-playlist"], safe.href);
 
     if (stderr && stderr.includes("ERROR:")) {
       console.error("[API] yt-dlp error:", stderr);

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import { ytDlp } from "@/lib/ytdlp";
-
-const execAsync = promisify(exec);
+import { assertPublicHttpUrl, safeFetchText } from "@/lib/safeUrl";
+import { rateLimited } from "@/lib/rateLimit";
 
 // Detect platform from URL
 function detectPlatform(url: string): "shopee" | "tiktok_shop" | "lazada" | "unknown" {
@@ -16,8 +14,7 @@ function detectPlatform(url: string): "shopee" | "tiktok_shop" | "lazada" | "unk
 async function scrapeShopee(url: string) {
   // Shopee embeds data in __NEXT_DATA__ or window.__data__
   // Use curl with browser-like headers to fetch raw HTML
-  const curlCmd = `curl -sL --max-time 20 -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" -H "Accept-Language: vi-VN,vi;q=0.9" "${url}"`;
-  const { stdout } = await execAsync(curlCmd, { timeout: 25000 });
+  const stdout = await safeFetchText(url, { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "Accept-Language": "vi-VN,vi;q=0.9" });
 
   // Try to extract __NEXT_DATA__
   const nextDataMatch = stdout.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
@@ -56,7 +53,7 @@ async function scrapeShopee(url: string) {
 async function scrapeTikTokShop(url: string) {
   // Use yt-dlp for TikTok product pages — may not work perfectly but tries
   try {
-    const { stdout } = await ytDlp(`--dump-json --no-warnings "${url}"`);
+    const { stdout } = await ytDlp(["--dump-json", "--no-warnings"], url);
     const data = JSON.parse(stdout.trim());
 
     return {
@@ -75,8 +72,7 @@ async function scrapeTikTokShop(url: string) {
 }
 
 async function curlFallback(url: string, platform: string) {
-  const curlCmd = `curl -sL --max-time 20 -H "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15" "${url}"`;
-  const { stdout } = await execAsync(curlCmd, { timeout: 25000 });
+  const stdout = await safeFetchText(url, { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15" });
 
   const title = stdout.match(/<meta property="og:title" content="([^"]+)"/)?.[1] ||
                 stdout.match(/<title>([^<]+)<\/title>/)?.[1] || "Sản phẩm";
@@ -95,6 +91,9 @@ async function curlFallback(url: string, platform: string) {
 }
 
 export async function POST(req: NextRequest) {
+  if (rateLimited(req, "ecommerce")) {
+    return NextResponse.json({ error: "Bạn thao tác quá nhanh, vui lòng thử lại sau." }, { status: 429 });
+  }
   try {
     const body = await req.json();
     const { url } = body;
@@ -103,7 +102,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Vui lòng cung cấp URL sản phẩm hợp lệ." }, { status: 400 });
     }
 
-    console.log(`[API/ecommerce] Đang scrape: ${url}`);
+    const safe = await assertPublicHttpUrl(url);
+    console.log(`[API/ecommerce] Đang scrape: ${safe.href}`);
 
     const platform = detectPlatform(url);
 
