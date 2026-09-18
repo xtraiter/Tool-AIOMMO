@@ -10,9 +10,11 @@ import { useTrimPlayer } from "@/lib/useTrimPlayer";
 import { safeFilename } from "@/lib/filename";
 import { ProgressBar } from "./ProgressBar";
 import { TrimBar } from "./TrimBar";
+import { useTr } from "@/lib/i18n";
 import "./tool-page.css";
 
 export function VideoCutter() {
+  const tr = useTr();
   const [file, setFile] = useState<File | null>(null);
   const [duration, setDuration] = useState(0);
   const [start, setStart] = useState(0);
@@ -65,14 +67,14 @@ export function VideoCutter() {
   async function handleCut() {
     if (!file) return;
     if (end <= start) {
-      setError("Thời điểm kết thúc phải sau thời điểm bắt đầu.");
+      setError(tr("Thời điểm kết thúc phải sau thời điểm bắt đầu.", "The end time must be after the start time."));
       return;
     }
     videoRef.current?.pause();
     setBusy(true);
     setError("");
     setProgress(0);
-    setStatus("Đang nạp bộ xử lý FFmpeg...");
+    setStatus(tr("Đang nạp bộ xử lý FFmpeg...", "Loading the FFmpeg engine..."));
     let offProgress: (() => void) | undefined;
     try {
       const ffmpeg = await loadSharedFfmpeg();
@@ -84,10 +86,10 @@ export function VideoCutter() {
       const inName = `in.${ext}`;
       const outName = `out.${ext === "mov" ? "mp4" : ext}`;
 
-      setStatus("Đang ghi tệp vào bộ nhớ xử lý...");
+      setStatus(tr("Đang ghi tệp vào bộ nhớ xử lý...", "Writing the file to working memory..."));
       await ffmpeg.writeFile(inName, await fetchFile(file));
 
-      setStatus(removeMode ? "Đang xóa đoạn đã chọn và nối lại..." : precise ? "Đang cắt chính xác (mã hoá lại)..." : "Đang cắt nhanh...");
+      setStatus(removeMode ? tr("Đang xóa đoạn đã chọn và nối lại...", "Removing the selection and joining the rest...") : precise ? tr("Đang cắt chính xác (mã hoá lại)...", "Cutting precisely (re-encoding)...") : tr("Đang cắt nhanh...", "Cutting quickly..."));
       // "Remove" keeps [0,start] + [end,duration] and joins them; that always needs a re-encode.
       const buildRemoveArgs = (withAudio: boolean) => {
         const before = start > 0.05;
@@ -109,7 +111,7 @@ export function VideoCutter() {
         graph += `${parts}concat=n=${v.length}:v=1:a=${withAudio ? 1 : 0}[vout]${withAudio ? "[aout]" : ""}`;
         return ["-i", inName, "-filter_complex", graph, "-map", "[vout]", ...(withAudio ? ["-map", "[aout]", "-c:a", "aac"] : []), "-c:v", "libx264", "-preset", "veryfast", "-threads", "1", "-pix_fmt", "yuv420p", outName];
       };
-      if (removeMode && start <= 0.05 && end >= duration - 0.05) throw new Error("Bạn đang chọn toàn bộ video để xóa. Hãy thu hẹp vùng chọn.");
+      if (removeMode && start <= 0.05 && end >= duration - 0.05) throw new Error(tr("Bạn đang chọn toàn bộ video để xóa. Hãy thu hẹp vùng chọn.", "You selected the whole video to remove. Narrow the selection."));
       const args = removeMode
         ? buildRemoveArgs(true)
         : precise
@@ -118,18 +120,18 @@ export function VideoCutter() {
 
       let exitCode = await ffmpeg.exec(args);
       if (exitCode !== 0 && removeMode) exitCode = await ffmpeg.exec(buildRemoveArgs(false)); // source has no audio track
-      if (exitCode !== 0) throw new Error("FFmpeg xử lý thất bại. Hãy thử chế độ cắt chính xác.");
+      if (exitCode !== 0) throw new Error(tr("FFmpeg xử lý thất bại. Hãy thử chế độ cắt chính xác.", "FFmpeg failed. Try the precise cut mode."));
 
       const data = await ffmpeg.readFile(outName);
       const blob = new Blob([data as BlobPart], { type: "video/mp4" });
       const base = file.name.replace(/\.[^.]+$/, "");
-      downloadBlob(blob, safeFilename(`${base} (cắt)`, outName.split(".").pop() || "mp4"));
-      setStatus(`Hoàn tất! Đã tải xuống video dài ${formatDuration(removeMode ? duration - (end - start) : end - start)}.`);
+      downloadBlob(blob, safeFilename(`${base} (${tr("cắt", "cut")})`, outName.split(".").pop() || "mp4"));
+      setStatus(tr(`Hoàn tất! Đã tải xuống video dài ${formatDuration(removeMode ? duration - (end - start) : end - start)}.`, `Done! Downloaded a ${formatDuration(removeMode ? duration - (end - start) : end - start)} video.`));
 
       await ffmpeg.deleteFile(inName).catch(() => {});
       await ffmpeg.deleteFile(outName).catch(() => {});
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Có lỗi xảy ra khi cắt video.");
+      setError(err instanceof Error ? err.message : tr("Có lỗi xảy ra khi cắt video.", "Something went wrong while cutting the video."));
     } finally {
       offProgress?.();
       setBusy(false);
@@ -149,9 +151,9 @@ export function VideoCutter() {
 
   return (
     <div className="tool-page">
-      <h1><Scissors size={22} /> Cắt Video</h1>
+      <h1><Scissors size={22} /> {tr("Cắt Video", "Cut Video")}</h1>
       <p className="tool-subtitle">
-        Kéo hai đầu vàng để chọn đoạn cần giữ, xem trước ngay, tinh chỉnh từng 0,1 giây. Xử lý hoàn toàn trên thiết bị của bạn, không tải file lên máy chủ.
+        {tr("Kéo hai đầu vàng để chọn đoạn cần giữ, xem trước ngay, tinh chỉnh từng 0,1 giây. Xử lý hoàn toàn trên thiết bị của bạn, không tải file lên máy chủ.", "Drag the two gold handles to pick the part to keep, preview instantly and fine-tune by 0.1 s. Everything runs on your device — nothing is uploaded.")}
       </p>
 
       {!file ? (
@@ -159,8 +161,8 @@ export function VideoCutter() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0] ?? null); }}>
           <UploadCloud size={30} />
-          <div className="tool-drop-title">Kéo thả video vào đây hoặc bấm để chọn</div>
-          <div className="tool-drop-hint">Hỗ trợ MP4, MOV, WEBM, MKV...</div>
+          <div className="tool-drop-title">{tr("Kéo thả video vào đây hoặc bấm để chọn", "Drop a video here or click to choose")}</div>
+          <div className="tool-drop-hint">{tr("Hỗ trợ MP4, MOV, WEBM, MKV...", "Supports MP4, MOV, WEBM, MKV...")}</div>
           <input ref={inputRef} type="file" accept="video/*" hidden onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
         </div>
       ) : (
@@ -177,12 +179,12 @@ export function VideoCutter() {
           <div className="tool-file-row">
             <span className="tool-file-name">{file.name}</span>
             <span className="tool-file-meta">{formatBytes(file.size)} · {formatDuration(duration)}</span>
-            <button className="tool-icon-btn" onClick={reset} title="Bỏ chọn" disabled={busy}><X size={16} /></button>
+            <button className="tool-icon-btn" onClick={reset} title={tr("Bỏ chọn", "Remove file")} disabled={busy}><X size={16} /></button>
           </div>
 
-          <div className="cut-keep" role="radiogroup" aria-label="Kiểu cắt">
-            <button type="button" role="radio" aria-checked={!removeMode} className={!removeMode ? "is-active" : ""} onClick={() => setRemoveMode(false)} disabled={busy}>Giữ đoạn đã chọn</button>
-            <button type="button" role="radio" aria-checked={removeMode} className={removeMode ? "is-active is-remove" : ""} onClick={() => setRemoveMode(true)} disabled={busy}>Xóa đoạn đã chọn</button>
+          <div className="cut-keep" role="radiogroup" aria-label={tr("Kiểu cắt", "Cut type")}>
+            <button type="button" role="radio" aria-checked={!removeMode} className={!removeMode ? "is-active" : ""} onClick={() => setRemoveMode(false)} disabled={busy}>{tr("Giữ đoạn đã chọn", "Keep selection")}</button>
+            <button type="button" role="radio" aria-checked={removeMode} className={removeMode ? "is-active is-remove" : ""} onClick={() => setRemoveMode(true)} disabled={busy}>{tr("Xóa đoạn đã chọn", "Remove selection")}</button>
           </div>
 
           <TrimBar
@@ -202,21 +204,21 @@ export function VideoCutter() {
           />
 
           {!removeMode && (
-          <div className="cut-mode" role="radiogroup" aria-label="Chế độ cắt">
+          <div className="cut-mode" role="radiogroup" aria-label={tr("Chế độ cắt", "Cut mode")}>
             <button type="button" role="radio" aria-checked={!precise} className={!precise ? "is-active" : ""} onClick={() => setPrecise(false)} disabled={busy}>
               <Zap size={16} />
-              <span><strong>Cắt nhanh</strong><small>Giữ nguyên chất lượng, xong trong vài giây. Có thể lệch vài khung hình.</small></span>
+              <span><strong>{tr("Cắt nhanh", "Fast cut")}</strong><small>{tr("Giữ nguyên chất lượng, xong trong vài giây. Có thể lệch vài khung hình.", "Keeps original quality, done in seconds. May be off by a few frames.")}</small></span>
             </button>
             <button type="button" role="radio" aria-checked={precise} className={precise ? "is-active" : ""} onClick={() => setPrecise(true)} disabled={busy}>
               <Target size={16} />
-              <span><strong>Cắt chính xác</strong><small>Đúng từng khung hình. Mã hoá lại nên chậm hơn.</small></span>
+              <span><strong>{tr("Cắt chính xác", "Precise cut")}</strong><small>{tr("Đúng từng khung hình. Mã hoá lại nên chậm hơn.", "Frame-accurate. Re-encodes, so it is slower.")}</small></span>
             </button>
           </div>
           )}
 
           <div className="tool-row">
             <button className="tool-btn" onClick={handleCut} disabled={busy || duration <= 0}>
-              <Scissors size={15} /> {busy ? `Đang xử lý (${progress}%)` : "Cắt và tải xuống"}
+              <Scissors size={15} /> {busy ? tr(`Đang xử lý (${progress}%)`, `Processing (${progress}%)`) : tr("Cắt và tải xuống", "Cut and download")}
             </button>
           </div>
 

@@ -10,11 +10,13 @@ import { safeFilename } from "@/lib/filename";
 import { ProgressBar } from "./ProgressBar";
 import { TrimBar } from "./TrimBar";
 import { useBackgroundBusy } from "@/lib/backgroundEffect";
+import { useTr } from "@/lib/i18n";
 import "./tool-page.css";
 
 const BITRATES = [320, 256, 192, 128];
 
 export function AudioCutter() {
+  const tr = useTr();
   const [file, setFile] = useState<File | null>(null);
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null);
   const [peaks, setPeaks] = useState<number[]>([]);
@@ -44,7 +46,7 @@ export function AudioCutter() {
   async function handleFile(f: File | null) {
     if (!f) return;
     setError("");
-    setStatus("Đang giải mã âm thanh...");
+    setStatus(tr("Đang giải mã âm thanh...", "Decoding audio..."));
     setFile(f);
     try {
       const ctx = ctxRef.current ?? new (getAudioContextCtor())();
@@ -57,7 +59,7 @@ export function AudioCutter() {
       setEnd(decoded.duration);
       setStatus("");
     } catch {
-      setError("Không thể giải mã tệp âm thanh này.");
+      setError(tr("Không thể giải mã tệp âm thanh này.", "This audio file could not be decoded."));
       setFile(null);
       setStatus("");
     }
@@ -66,11 +68,11 @@ export function AudioCutter() {
   async function handleCut() {
     if (!buffer) return;
     if (end <= start) {
-      setError("Thời điểm kết thúc phải sau thời điểm bắt đầu.");
+      setError(tr("Thời điểm kết thúc phải sau thời điểm bắt đầu.", "The end time must be after the start time."));
       return;
     }
     if (removeMode && start <= 0.02 && end >= duration - 0.02) {
-      setError("Bạn đang chọn toàn bộ bài để xóa. Hãy thu hẹp vùng chọn.");
+      setError(tr("Bạn đang chọn toàn bộ bài để xóa. Hãy thu hẹp vùng chọn.", "You selected the whole track to remove. Narrow the selection."));
       return;
     }
     audioRef.current?.pause();
@@ -102,14 +104,14 @@ export function AudioCutter() {
         for (let i = 0; i < fo; i++) dst[frames - 1 - i] *= i / fo;
       }
 
-      setStatus(format === "mp3" ? "Đang mã hoá MP3..." : "Đang xuất WAV...");
+      setStatus(format === "mp3" ? tr("Đang mã hoá MP3...", "Encoding MP3...") : tr("Đang xuất WAV...", "Exporting WAV..."));
       setProgress(format === "mp3" ? 1 : 50);
       const blob = format === "mp3" ? await audioBufferToMp3(out, bitrate, setProgress) : audioBufferToWav(out);
       const base = file!.name.replace(/\.[^.]+$/, "");
-      downloadBlob(blob, safeFilename(`${base} (cắt)`, format));
-      setStatus(`Hoàn tất! Đã tải xuống đoạn nhạc dài ${formatDuration(out.duration)}.`);
+      downloadBlob(blob, safeFilename(`${base} (${tr("cắt", "cut")})`, format));
+      setStatus(tr(`Hoàn tất! Đã tải xuống đoạn nhạc dài ${formatDuration(out.duration)}.`, `Done! Downloaded a ${formatDuration(out.duration)} clip.`));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Có lỗi xảy ra khi cắt nhạc.");
+      setError(err instanceof Error ? err.message : tr("Có lỗi xảy ra khi cắt nhạc.", "Something went wrong while cutting the audio."));
     } finally {
       setBusy(false);
     }
@@ -133,9 +135,9 @@ export function AudioCutter() {
 
   return (
     <div className="tool-page">
-      <h1><Music size={22} /> Cắt &amp; Biên Tập Nhạc</h1>
+      <h1><Music size={22} /> {tr("Cắt & Biên Tập Nhạc", "Cut & Edit Audio")}</h1>
       <p className="tool-subtitle">
-        Nhìn sóng âm, kéo hai đầu vàng để chọn đoạn, nghe thử ngay, tinh chỉnh từng 0,1 giây. Xử lý hoàn toàn trên thiết bị của bạn.
+        {tr("Nhìn sóng âm, kéo hai đầu vàng để chọn đoạn, nghe thử ngay, tinh chỉnh từng 0,1 giây. Xử lý hoàn toàn trên thiết bị của bạn.", "See the waveform, drag the two gold handles to pick a part, listen instantly and fine-tune by 0.1 s. Everything runs on your device.")}
       </p>
 
       {!file ? (
@@ -143,8 +145,8 @@ export function AudioCutter() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0] ?? null); }}>
           <UploadCloud size={30} />
-          <div className="tool-drop-title">Kéo thả tệp nhạc vào đây hoặc bấm để chọn</div>
-          <div className="tool-drop-hint">Hỗ trợ MP3, WAV, M4A, OGG...</div>
+          <div className="tool-drop-title">{tr("Kéo thả tệp nhạc vào đây hoặc bấm để chọn", "Drop an audio file here or click to choose")}</div>
+          <div className="tool-drop-hint">{tr("Hỗ trợ MP3, WAV, M4A, OGG...", "Supports MP3, WAV, M4A, OGG...")}</div>
           <input ref={inputRef} type="file" accept="audio/*" hidden onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
         </div>
       ) : (
@@ -153,14 +155,14 @@ export function AudioCutter() {
           <div className="tool-file-row">
             <span className="tool-file-name">{file.name}</span>
             <span className="tool-file-meta">{formatBytes(file.size)} · {formatDuration(duration)}</span>
-            <button className="tool-icon-btn" onClick={reset} title="Bỏ chọn" disabled={busy}><X size={16} /></button>
+            <button className="tool-icon-btn" onClick={reset} title={tr("Bỏ chọn", "Remove file")} disabled={busy}><X size={16} /></button>
           </div>
 
           {buffer && (
             <>
-              <div className="cut-keep" role="radiogroup" aria-label="Kiểu cắt">
-                <button type="button" role="radio" aria-checked={!removeMode} className={!removeMode ? "is-active" : ""} onClick={() => setRemoveMode(false)} disabled={busy}>Giữ đoạn đã chọn</button>
-                <button type="button" role="radio" aria-checked={removeMode} className={removeMode ? "is-active is-remove" : ""} onClick={() => setRemoveMode(true)} disabled={busy}>Xóa đoạn đã chọn</button>
+              <div className="cut-keep" role="radiogroup" aria-label={tr("Kiểu cắt", "Cut type")}>
+                <button type="button" role="radio" aria-checked={!removeMode} className={!removeMode ? "is-active" : ""} onClick={() => setRemoveMode(false)} disabled={busy}>{tr("Giữ đoạn đã chọn", "Keep selection")}</button>
+                <button type="button" role="radio" aria-checked={removeMode} className={removeMode ? "is-active is-remove" : ""} onClick={() => setRemoveMode(true)} disabled={busy}>{tr("Xóa đoạn đã chọn", "Remove selection")}</button>
               </div>
 
               <TrimBar
@@ -181,26 +183,26 @@ export function AudioCutter() {
 
               <div className="tool-row">
                 <div className="tool-field">
-                  <label>Mờ dần vào: {fadeIn.toFixed(1)} giây</label>
+                  <label>{tr("Mờ dần vào", "Fade in")}: {fadeIn.toFixed(1)} {tr("giây", "s")}</label>
                   <input type="range" min={0} max={10} step={0.5} value={fadeIn} onChange={(e) => setFadeIn(Number(e.target.value))} disabled={busy} style={{ accentColor: "var(--accent)" }} />
                 </div>
                 <div className="tool-field">
-                  <label>Mờ dần ra: {fadeOut.toFixed(1)} giây</label>
+                  <label>{tr("Mờ dần ra", "Fade out")}: {fadeOut.toFixed(1)} {tr("giây", "s")}</label>
                   <input type="range" min={0} max={10} step={0.5} value={fadeOut} onChange={(e) => setFadeOut(Number(e.target.value))} disabled={busy} style={{ accentColor: "var(--accent)" }} />
                 </div>
               </div>
 
               <div className="tool-row">
                 <div className="tool-field">
-                  <label>Định dạng đầu ra</label>
+                  <label>{tr("Định dạng đầu ra", "Output format")}</label>
                   <select value={format} onChange={(e) => setFormat(e.target.value as "mp3" | "wav")} disabled={busy}>
                     <option value="mp3">MP3</option>
-                    <option value="wav">WAV (không nén)</option>
+                    <option value="wav">{tr("WAV (không nén)", "WAV (uncompressed)")}</option>
                   </select>
                 </div>
                 {format === "mp3" && (
                   <div className="tool-field">
-                    <label>Chất lượng MP3</label>
+                    <label>{tr("Chất lượng MP3", "MP3 quality")}</label>
                     <select value={bitrate} onChange={(e) => setBitrate(Number(e.target.value))} disabled={busy}>
                       {BITRATES.map((b) => <option key={b} value={b}>{b} kbps</option>)}
                     </select>
@@ -210,13 +212,13 @@ export function AudioCutter() {
 
               <div className="tool-row">
                 <button className="tool-btn" onClick={handleCut} disabled={busy}>
-                  <Scissors size={15} /> {busy ? "Đang xử lý..." : `Cắt và tải xuống (${formatDuration(resultLength)})`}
+                  <Scissors size={15} /> {busy ? tr("Đang xử lý...", "Processing...") : tr(`Cắt và tải xuống (${formatDuration(resultLength)})`, `Cut and download (${formatDuration(resultLength)})`)}
                 </button>
               </div>
             </>
           )}
 
-          {busy && <ProgressBar percent={progress} label={status || "Đang xử lý..."} />}
+          {busy && <ProgressBar percent={progress} label={status || tr("Đang xử lý...", "Processing...")} />}
           {status && !error && !busy && <div className="tool-status-ok">{status}</div>}
           {error && <div className="tool-status-error">{error}</div>}
         </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Play, Pause, Repeat, ZoomIn, ZoomOut, Maximize2, Crosshair } from "lucide-react";
 import { fmtTime, parseTime, clamp } from "@/lib/timeFormat";
+import { useTr } from "@/lib/i18n";
 import "./trim-bar.css";
 
 type Props = {
@@ -61,6 +62,7 @@ function TimeChip({
 export function TrimBar({
   duration, start, end, onChange, current, onSeek, playing, onTogglePlay, loop, onLoopChange, thumbs, peaks, mode = "keep", disabled,
 }: Props) {
+  const tr = useTr();
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const [viewW, setViewW] = useState(320);
@@ -212,12 +214,12 @@ export function TrimBar({
   return (
     <div className={`trim${disabled ? " is-disabled" : ""}${mode === "remove" ? " is-remove" : ""}`}>
       <div className="trim-transport">
-        <button type="button" className="trim-play" onClick={onTogglePlay} disabled={disabled} aria-label={playing ? "Tạm dừng" : "Phát đoạn đã chọn"}>
+        <button type="button" className="trim-play" onClick={onTogglePlay} disabled={disabled} aria-label={playing ? tr("Tạm dừng", "Pause") : tr("Phát đoạn đã chọn", "Play selection")}>
           {playing ? <Pause size={20} /> : <Play size={20} />}
-          <span>{playing ? "Tạm dừng" : mode === "remove" ? "Nghe đoạn sẽ xóa" : "Phát đoạn chọn"}</span>
+          <span>{playing ? tr("Tạm dừng", "Pause") : mode === "remove" ? tr("Nghe đoạn sẽ xóa", "Preview removed part") : tr("Phát đoạn chọn", "Play selection")}</span>
         </button>
-        <button type="button" className={`trim-loop${loop ? " is-on" : ""}`} onClick={() => onLoopChange(!loop)} aria-pressed={loop} title="Lặp lại đoạn đã chọn">
-          <Repeat size={16} /> <span>Lặp</span>
+        <button type="button" className={`trim-loop${loop ? " is-on" : ""}`} onClick={() => onLoopChange(!loop)} aria-pressed={loop} title={tr("Lặp lại đoạn đã chọn", "Loop the selection")}>
+          <Repeat size={16} /> <span>{tr("Lặp", "Loop")}</span>
         </button>
         <span className="trim-clock" aria-live="off">
           {fmtTime(current, 1)} <em>/ {fmtTime(duration, 1)}</em>
@@ -262,7 +264,7 @@ export function TrimBar({
               className="trim-handle is-start"
               role="slider"
               tabIndex={0}
-              aria-label="Điểm bắt đầu"
+              aria-label={tr("Điểm bắt đầu", "Start point")}
               aria-valuemin={0}
               aria-valuemax={duration}
               aria-valuenow={start}
@@ -278,7 +280,7 @@ export function TrimBar({
               className="trim-handle is-end"
               role="slider"
               tabIndex={0}
-              aria-label="Điểm kết thúc"
+              aria-label={tr("Điểm kết thúc", "End point")}
               aria-valuemin={0}
               aria-valuemax={duration}
               aria-valuenow={end}
@@ -306,34 +308,34 @@ export function TrimBar({
       </div>
 
       <div className="trim-zoom">
-        <button type="button" onClick={() => applyZoom(zoom / 1.6)} disabled={zoom <= 1} aria-label="Thu nhỏ"><ZoomOut size={16} /></button>
-        <input type="range" min={0} max={100} value={Math.round((Math.log(zoom) / Math.log(80)) * 100)} onChange={(e) => applyZoom(Math.pow(80, Number(e.target.value) / 100))} aria-label="Phóng to thanh thời gian" />
-        <button type="button" onClick={() => applyZoom(zoom * 1.6)} disabled={zoom >= 80} aria-label="Phóng to"><ZoomIn size={16} /></button>
-        <button type="button" onClick={() => applyZoom(1)} aria-label="Vừa khung"><Maximize2 size={15} /></button>
-        <span className="trim-zoom-hint">Chụm 2 ngón hoặc Ctrl + lăn chuột để phóng to</span>
+        <button type="button" onClick={() => applyZoom(zoom / 1.6)} disabled={zoom <= 1} aria-label={tr("Thu nhỏ", "Zoom out")}><ZoomOut size={16} /></button>
+        <input type="range" min={0} max={100} value={Math.round((Math.log(zoom) / Math.log(80)) * 100)} onChange={(e) => applyZoom(Math.pow(80, Number(e.target.value) / 100))} aria-label={tr("Phóng to thanh thời gian", "Zoom the timeline")} />
+        <button type="button" onClick={() => applyZoom(zoom * 1.6)} disabled={zoom >= 80} aria-label={tr("Phóng to", "Zoom in")}><ZoomIn size={16} /></button>
+        <button type="button" onClick={() => applyZoom(1)} aria-label={tr("Vừa khung", "Fit to view")}><Maximize2 size={15} /></button>
+        <span className="trim-zoom-hint">{tr("Chụm 2 ngón hoặc Ctrl + lăn chuột để phóng to", "Pinch with two fingers or Ctrl + scroll to zoom")}</span>
       </div>
 
       <div className="trim-panel">
         <div className="trim-chips">
-          <TimeChip label="Bắt đầu" value={start} active={active === "start"} onFocusChip={() => setActive("start")} onCommit={(t) => onSeek(setStart(t))} />
-          <TimeChip label="Kết thúc" value={end} active={active === "end"} onFocusChip={() => setActive("end")} onCommit={(t) => onSeek(setEnd(t))} />
+          <TimeChip label={tr("Bắt đầu", "Start")} value={start} active={active === "start"} onFocusChip={() => setActive("start")} onCommit={(t) => onSeek(setStart(t))} />
+          <TimeChip label={tr("Kết thúc", "End")} value={end} active={active === "end"} onFocusChip={() => setActive("end")} onCommit={(t) => onSeek(setEnd(t))} />
         </div>
         <p className="trim-target">
-          Đang chỉnh: <strong>{active === "start" ? "điểm bắt đầu" : "điểm kết thúc"}</strong>
-          <span>{mode === "remove" ? "Đoạn bị xóa" : "Đoạn giữ lại"}: <b>{fmtTime(end - start, 2)}</b></span>
+          {tr("Đang chỉnh", "Adjusting")}: <strong>{active === "start" ? tr("điểm bắt đầu", "start point") : tr("điểm kết thúc", "end point")}</strong>
+          <span>{mode === "remove" ? tr("Đoạn bị xóa", "Removed part") : tr("Đoạn giữ lại", "Kept part")}: <b>{fmtTime(end - start, 2)}</b></span>
         </p>
         <div className="trim-nudge">
           {[-1, -0.1, 0.1, 1].map((d) => (
-            <button key={d} type="button" onClick={() => onSeek(active === "start" ? setStart(start + d) : setEnd(end + d))} aria-label={`${d < 0 ? "Lùi" : "Tiến"} ${Math.abs(d)} giây`}>
+            <button key={d} type="button" onClick={() => onSeek(active === "start" ? setStart(start + d) : setEnd(end + d))} aria-label={`${d < 0 ? tr("Lùi", "Back") : tr("Tiến", "Forward")} ${Math.abs(d)} ${tr("giây", "s")}`}>
               {d > 0 ? "+" : "−"}{Math.abs(d)}s
             </button>
           ))}
         </div>
         <div className="trim-actions">
           <button type="button" className="trim-sethere" onClick={() => (active === "start" ? setStart(current) : setEnd(current))}>
-            <Crosshair size={14} /> Đặt {active === "start" ? "bắt đầu" : "kết thúc"} tại vị trí đang xem
+            <Crosshair size={14} /> {active === "start" ? tr("Đặt bắt đầu tại vị trí đang xem", "Set start at playhead") : tr("Đặt kết thúc tại vị trí đang xem", "Set end at playhead")}
           </button>
-          <button type="button" className="trim-sethere" onClick={() => onChange(0, duration)}>Chọn toàn bộ</button>
+          <button type="button" className="trim-sethere" onClick={() => onChange(0, duration)}>{tr("Chọn toàn bộ", "Select all")}</button>
         </div>
       </div>
     </div>
