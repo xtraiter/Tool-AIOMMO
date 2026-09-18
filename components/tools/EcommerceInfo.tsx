@@ -15,6 +15,10 @@ type Product = {
   description: string;
   images: string[];
   videos: string[];
+  variants?: { name: string; options: { name: string; image?: string }[] }[];
+  skus?: { name: string; price: string; stock?: number; image?: string }[];
+  specs?: { name: string; value: string }[];
+  sold?: string;
   source_url?: string;
 };
 
@@ -190,7 +194,42 @@ export function EcommerceInfo() {
                   </button>
                 </div>
                 {result.price && <div style={{ fontSize: '16px', color: '#ef4444', fontWeight: 'bold' }}>{result.price}</div>}
+                {result.sold && <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginTop: '2px' }}>Đã bán {result.sold}</div>}
               </div>
+
+              {result.skus && result.skus.length > 0 && (
+                <div>
+                  <h4 style={{ fontSize: '14px', margin: '0 0 8px 0' }}>Phân loại &amp; giá ({result.skus.length})</h4>
+                  <div className="ec-table-wrap">
+                    <table className="ec-table">
+                      <thead><tr><th>Phân loại</th><th>Giá</th><th>Kho</th></tr></thead>
+                      <tbody>
+                        {result.skus.map((k, i) => (
+                          <tr key={i}>
+                            <td>
+                              {k.image && <img src={k.image} alt="" referrerPolicy="no-referrer" />}
+                              <span>{k.name}</span>
+                            </td>
+                            <td className="ec-price">{k.price}</td>
+                            <td>{k.stock !== undefined ? k.stock.toLocaleString("vi-VN") : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {result.specs && result.specs.length > 0 && (
+                <div>
+                  <h4 style={{ fontSize: '14px', margin: '0 0 8px 0' }}>Thông số</h4>
+                  <dl className="ec-specs">
+                    {result.specs.map((sp, i) => (
+                      <div key={i}><dt>{sp.name}</dt><dd>{sp.value}</dd></div>
+                    ))}
+                  </dl>
+                </div>
+              )}
 
               <div style={{ background: 'rgba(0,0,0,0.03)', padding: '12px', borderRadius: '8px', position: 'relative' }}>
                 <h4 style={{ fontSize: '14px', margin: '0 0 8px 0' }}>Mô tả sản phẩm</h4>

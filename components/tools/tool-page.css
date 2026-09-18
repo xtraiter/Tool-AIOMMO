@@ -378,3 +378,17 @@
 .ec-helper ol strong { color: var(--text); }
 .ec-helper-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
 .ec-helper-actions a.tool-btn { text-decoration: none; cursor: grab; }
+
+/* E-commerce: variants/SKU table and spec list */
+.ec-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.ec-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ec-table th, .ec-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.ec-table tr:last-child td { border-bottom: none; }
+.ec-table th { font-size: 12px; color: var(--muted); background: var(--panel-2); white-space: nowrap; }
+.ec-table td:first-child { display: flex; align-items: center; gap: 10px; }
+.ec-table td img { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.ec-price { font-weight: 700; color: #ef4444; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ec-specs { margin: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.ec-specs > div { display: grid; grid-template-columns: minmax(110px, 40%) 1fr; gap: 10px; }
+.ec-specs dt { color: var(--muted); }
+.ec-specs dd { margin: 0; overflow-wrap: anywhere; }

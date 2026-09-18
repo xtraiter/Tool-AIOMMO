@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
 import { assertPublicHttpUrl, safeFetchText } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
+import { parseTikTokShop, type ProductInfo } from "@/lib/tiktokShop";
+import { safeFetchPage } from "@/lib/safeUrl";
 import { mediaProxyUrl } from "@/lib/signedUrl";
 import { detectPlatform as detectSite } from "@/lib/platforms";
 
@@ -122,6 +124,31 @@ export async function POST(req: NextRequest) {
 
     const safe = await assertPublicHttpUrl(url);
     console.log(`[API/ecommerce] Đang scrape: ${safe.href}`);
+
+    // TikTok Shop product pages embed their data for desktop browsers; the mobile
+    // layout is what triggers the "Security Check" wall, so ask for the desktop one.
+    const site0 = detectSite(safe.href);
+    if (site0.id === "tiktok" || site0.id === "tiktokshop") {
+      try {
+        const page = await safeFetchPage(safe.href, {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+        });
+        const product = parseTikTokShop(page.text);
+        if (product) {
+          const proxy = (u?: string) => (u ? mediaProxyUrl(u) : u);
+          const out: ProductInfo = {
+            ...product,
+            images: product.images.map((u) => mediaProxyUrl(u)),
+            videos: product.videos.map((u) => mediaProxyUrl(u)),
+            variants: product.variants.map((v) => ({ ...v, options: v.options.map((o) => ({ ...o, image: proxy(o.image) })) })),
+            skus: product.skus.map((k) => ({ ...k, image: proxy(k.image) })),
+            source_url: page.url,
+          };
+          return NextResponse.json(out);
+        }
+      } catch { /* fall through to the generic path below */ }
+    }
 
     const platform = detectPlatform(url);
 
