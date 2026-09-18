@@ -78,6 +78,8 @@ async function scrapeTikTokShop(url: string) {
   }
 }
 
+const BOT_WALL = /security check|captcha|verify (you|that)|access denied|just a moment|are you a robot|unusual traffic|attention required|xác minh|kiểm tra bảo mật/i;
+
 async function curlFallback(url: string, platform: string) {
   const stdout = await safeFetchText(url, { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15" });
 
@@ -85,6 +87,10 @@ async function curlFallback(url: string, platform: string) {
                 stdout.match(/<title>([^<]+)<\/title>/)?.[1] || "Sản phẩm";
   const description = stdout.match(/<meta name="description" content="([^"]+)"/)?.[1] || "";
   const image = stdout.match(/<meta property="og:image" content="([^"]+)"/)?.[1] || "";
+
+  if (BOT_WALL.test(title)) {
+    throw new Error(`${platform} đang chặn truy cập tự động từ máy chủ (trang "${title.trim().slice(0, 40)}"), nên không lấy được dữ liệu từ link này.`);
+  }
 
   if (!stdout.match(/<meta property="og:title"/) && !stdout.match(/<title>[^<]+<\/title>/)) {
     throw new Error("Trang này không cung cấp thông tin sản phẩm cho truy cập tự động.");
