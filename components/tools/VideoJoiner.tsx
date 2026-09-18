@@ -96,7 +96,7 @@ export function VideoJoiner() {
         ...inputArgs,
         "-filter_complex", filterComplex,
         "-map", "[outv]", "-map", "[outa]",
-        "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac",
+        "-c:v", "libx264", "-preset", "veryfast", "-threads", "1", "-c:a", "aac",
         "out.mp4"
       ]);
       if (exitCode !== 0) {

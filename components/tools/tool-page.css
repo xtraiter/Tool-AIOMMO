@@ -392,3 +392,23 @@
 .ec-specs > div { display: grid; grid-template-columns: minmax(110px, 40%) 1fr; gap: 10px; }
 .ec-specs dt { color: var(--muted); }
 .ec-specs dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Cut tools: keep/remove switch and fast/precise mode cards */
+.vc-video { max-height: 42vh; }
+@media (min-width: 900px) { .vc-video { max-height: 50vh; } }
+.cut-mode { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 16px; }
+.cut-mode button {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text);
+}
+.cut-mode button svg { flex-shrink: 0; margin-top: 2px; color: var(--muted); }
+.cut-mode button span { display: flex; flex-direction: column; gap: 2px; }
+.cut-mode button small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.cut-mode button.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.cut-mode button.is-active svg { color: var(--accent); }
+.cut-mode button:disabled { opacity: 0.6; cursor: not-allowed; }
+.cut-keep { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.cut-keep button { min-height: 42px; border: none; border-radius: 9px; background: transparent; color: var(--muted); font-size: 13.5px; font-weight: 800; cursor: pointer; }
+.cut-keep button.is-active { background: var(--accent); color: var(--button-ink, #1a1200); }
+.cut-keep button.is-active.is-remove { background: #ef4444; color: #fff; }
+.cut-keep button:disabled { opacity: 0.6; cursor: not-allowed; }

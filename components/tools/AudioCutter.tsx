@@ -4,17 +4,29 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Music, UploadCloud, X, Scissors } from "lucide-react";
 import { formatBytes, formatDuration, downloadBlob } from "@/lib/ffmpegLoader";
 import { audioBufferToWav, audioBufferToMp3, getAudioContextCtor } from "@/lib/audioEncode";
+import { computePeaks } from "@/lib/mediaThumbs";
+import { useTrimPlayer } from "@/lib/useTrimPlayer";
+import { safeFilename } from "@/lib/filename";
 import { ProgressBar } from "./ProgressBar";
+import { TrimBar } from "./TrimBar";
 import { useBackgroundBusy } from "@/lib/backgroundEffect";
 import "./tool-page.css";
+
+const BITRATES = [320, 256, 192, 128];
 
 export function AudioCutter() {
   const [file, setFile] = useState<File | null>(null);
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null);
+  const [peaks, setPeaks] = useState<number[]>([]);
   const [duration, setDuration] = useState(0);
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(0);
+  const [removeMode, setRemoveMode] = useState(false);
+  const [loop, setLoop] = useState(true);
+  const [fadeIn, setFadeIn] = useState(0);
+  const [fadeOut, setFadeOut] = useState(0);
   const [format, setFormat] = useState<"mp3" | "wav">("mp3");
+  const [bitrate, setBitrate] = useState(192);
   const [busy, setBusy] = useState(false);
   useBackgroundBusy(busy);
   const [status, setStatus] = useState("");
@@ -25,9 +37,9 @@ export function AudioCutter() {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const fileUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => {
-    return () => { if (fileUrl) URL.revokeObjectURL(fileUrl); };
-  }, [fileUrl]);
+  useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
+
+  const player = useTrimPlayer(audioRef, { start, end }, loop);
 
   async function handleFile(f: File | null) {
     if (!f) return;
@@ -37,16 +49,17 @@ export function AudioCutter() {
     try {
       const ctx = ctxRef.current ?? new (getAudioContextCtor())();
       ctxRef.current = ctx;
-      const arrBuf = await f.arrayBuffer();
-      const decoded = await ctx.decodeAudioData(arrBuf);
+      const decoded = await ctx.decodeAudioData(await f.arrayBuffer());
       setBuffer(decoded);
+      setPeaks(computePeaks(decoded, 1200));
       setDuration(decoded.duration);
       setStart(0);
       setEnd(decoded.duration);
       setStatus("");
-    } catch (err) {
+    } catch {
       setError("Không thể giải mã tệp âm thanh này.");
       setFile(null);
+      setStatus("");
     }
   }
 
@@ -56,25 +69,45 @@ export function AudioCutter() {
       setError("Thời điểm kết thúc phải sau thời điểm bắt đầu.");
       return;
     }
+    if (removeMode && start <= 0.02 && end >= duration - 0.02) {
+      setError("Bạn đang chọn toàn bộ bài để xóa. Hãy thu hẹp vùng chọn.");
+      return;
+    }
+    audioRef.current?.pause();
     setBusy(true);
     setProgress(0);
     setError("");
     try {
       const ctx = ctxRef.current!;
-      const sampleRate = buffer.sampleRate;
-      const startSample = Math.floor(start * sampleRate);
-      const endSample = Math.floor(end * sampleRate);
-      const frameCount = endSample - startSample;
-      const trimmed = ctx.createBuffer(buffer.numberOfChannels, frameCount, sampleRate);
+      const sr = buffer.sampleRate;
+      const a = Math.floor(start * sr);
+      const b = Math.min(buffer.length, Math.floor(end * sr));
+      // Keep: [a,b). Remove: [0,a) + [b,length).
+      const segments: [number, number][] = removeMode ? [[0, a], [b, buffer.length]] : [[a, b]];
+      const frames = segments.reduce((n, [x, y]) => n + Math.max(0, y - x), 0);
+      const out = ctx.createBuffer(buffer.numberOfChannels, frames, sr);
       for (let c = 0; c < buffer.numberOfChannels; c++) {
-        trimmed.copyToChannel(buffer.getChannelData(c).subarray(startSample, endSample), c);
+        const src = buffer.getChannelData(c);
+        const dst = out.getChannelData(c);
+        let off = 0;
+        for (const [x, y] of segments) {
+          if (y <= x) continue;
+          dst.set(src.subarray(x, y), off);
+          off += y - x;
+        }
+        // Fades (linear) so the cut does not click.
+        const fi = Math.min(frames, Math.floor(fadeIn * sr));
+        const fo = Math.min(frames, Math.floor(fadeOut * sr));
+        for (let i = 0; i < fi; i++) dst[i] *= i / fi;
+        for (let i = 0; i < fo; i++) dst[frames - 1 - i] *= i / fo;
       }
 
       setStatus(format === "mp3" ? "Đang mã hoá MP3..." : "Đang xuất WAV...");
       setProgress(format === "mp3" ? 1 : 50);
-      const blob = format === "mp3" ? await audioBufferToMp3(trimmed, 192, setProgress) : audioBufferToWav(trimmed);
-      downloadBlob(blob, `cat_${file!.name.replace(/\.[^.]+$/, "")}.${format}`);
-      setStatus(`Hoàn tất! Đã tải xuống đoạn dài ${formatDuration(end - start)}.`);
+      const blob = format === "mp3" ? await audioBufferToMp3(out, bitrate, setProgress) : audioBufferToWav(out);
+      const base = file!.name.replace(/\.[^.]+$/, "");
+      downloadBlob(blob, safeFilename(`${base} (cắt)`, format));
+      setStatus(`Hoàn tất! Đã tải xuống đoạn nhạc dài ${formatDuration(out.duration)}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra khi cắt nhạc.");
     } finally {
@@ -85,19 +118,24 @@ export function AudioCutter() {
   function reset() {
     setFile(null);
     setBuffer(null);
+    setPeaks([]);
     setDuration(0);
     setStart(0);
     setEnd(0);
+    setFadeIn(0);
+    setFadeOut(0);
     setError("");
     setStatus("");
     if (inputRef.current) inputRef.current.value = "";
   }
 
+  const resultLength = removeMode ? duration - (end - start) : end - start;
+
   return (
     <div className="tool-page">
       <h1><Music size={22} /> Cắt &amp; Biên Tập Nhạc</h1>
       <p className="tool-subtitle">
-        Cắt đoạn nhạc mong muốn và xuất MP3/WAV — xử lý hoàn toàn bằng Web Audio API ngay trên trình duyệt của bạn.
+        Nhìn sóng âm, kéo hai đầu vàng để chọn đoạn, nghe thử ngay, tinh chỉnh từng 0,1 giây. Xử lý hoàn toàn trên thiết bị của bạn.
       </p>
 
       {!file ? (
@@ -111,66 +149,68 @@ export function AudioCutter() {
         </div>
       ) : (
         <div className="tool-card">
-          {buffer && (
-            <audio ref={audioRef} src={fileUrl ?? undefined} controls style={{ width: "100%", marginBottom: 14 }} />
-          )}
+          <audio ref={audioRef} src={fileUrl ?? undefined} preload="metadata" />
           <div className="tool-file-row">
             <span className="tool-file-name">{file.name}</span>
             <span className="tool-file-meta">{formatBytes(file.size)} · {formatDuration(duration)}</span>
-            <button className="tool-icon-btn" onClick={reset} title="Bỏ chọn"><X size={16} /></button>
+            <button className="tool-icon-btn" onClick={reset} title="Bỏ chọn" disabled={busy}><X size={16} /></button>
           </div>
 
           {buffer && (
             <>
-              <p style={{ fontSize: 11.5, color: "var(--muted)", margin: "0 0 4px" }}>
-                Kéo thanh trượt chỉ để chọn nhanh — để cắt chính xác, hãy tạm dừng nhạc ở đúng vị trí rồi bấm &quot;Đặt tại đây&quot;, hoặc gõ thẳng số giây.
-              </p>
+              <div className="cut-keep" role="radiogroup" aria-label="Kiểu cắt">
+                <button type="button" role="radio" aria-checked={!removeMode} className={!removeMode ? "is-active" : ""} onClick={() => setRemoveMode(false)} disabled={busy}>Giữ đoạn đã chọn</button>
+                <button type="button" role="radio" aria-checked={removeMode} className={removeMode ? "is-active is-remove" : ""} onClick={() => setRemoveMode(true)} disabled={busy}>Xóa đoạn đã chọn</button>
+              </div>
+
+              <TrimBar
+                duration={duration}
+                start={start}
+                end={end}
+                onChange={(s, e) => { setStart(s); setEnd(e); }}
+                current={player.current}
+                onSeek={player.seek}
+                playing={player.playing}
+                onTogglePlay={player.toggle}
+                loop={loop}
+                onLoopChange={setLoop}
+                peaks={peaks}
+                mode={removeMode ? "remove" : "keep"}
+                disabled={busy}
+              />
+
               <div className="tool-row">
                 <div className="tool-field">
-                  <label>Bắt đầu ({formatDuration(start)})</label>
-                  <input type="range" min={0} max={duration} step={0.01} value={start}
-                    onChange={(e) => setStart(Math.min(Number(e.target.value), end - 0.1))} />
-                  <div className="tool-precise-row">
-                    <input type="number" min={0} max={Math.max(0, end - 0.1)} step={0.1}
-                      value={Number(start.toFixed(2))}
-                      onChange={(e) => setStart(Math.max(0, Math.min(Number(e.target.value) || 0, end - 0.1)))} />
-                    <span className="tool-precise-unit">giây</span>
-                    <button type="button" className="tool-btn tool-btn-secondary tool-mark-btn"
-                      onClick={() => { if (audioRef.current) setStart(Math.min(audioRef.current.currentTime, end - 0.1)); }}>
-                      Đặt tại đây
-                    </button>
-                  </div>
+                  <label>Mờ dần vào: {fadeIn.toFixed(1)} giây</label>
+                  <input type="range" min={0} max={10} step={0.5} value={fadeIn} onChange={(e) => setFadeIn(Number(e.target.value))} disabled={busy} style={{ accentColor: "var(--accent)" }} />
                 </div>
                 <div className="tool-field">
-                  <label>Kết thúc ({formatDuration(end)})</label>
-                  <input type="range" min={0} max={duration} step={0.01} value={end}
-                    onChange={(e) => setEnd(Math.max(Number(e.target.value), start + 0.1))} />
-                  <div className="tool-precise-row">
-                    <input type="number" min={start + 0.1} max={duration} step={0.1}
-                      value={Number(end.toFixed(2))}
-                      onChange={(e) => setEnd(Math.max(start + 0.1, Math.min(Number(e.target.value) || 0, duration)))} />
-                    <span className="tool-precise-unit">giây</span>
-                    <button type="button" className="tool-btn tool-btn-secondary tool-mark-btn"
-                      onClick={() => { if (audioRef.current) setEnd(Math.max(audioRef.current.currentTime, start + 0.1)); }}>
-                      Đặt tại đây
-                    </button>
-                  </div>
+                  <label>Mờ dần ra: {fadeOut.toFixed(1)} giây</label>
+                  <input type="range" min={0} max={10} step={0.5} value={fadeOut} onChange={(e) => setFadeOut(Number(e.target.value))} disabled={busy} style={{ accentColor: "var(--accent)" }} />
                 </div>
               </div>
 
               <div className="tool-row">
                 <div className="tool-field">
                   <label>Định dạng đầu ra</label>
-                  <select value={format} onChange={(e) => setFormat(e.target.value as "mp3" | "wav")}>
+                  <select value={format} onChange={(e) => setFormat(e.target.value as "mp3" | "wav")} disabled={busy}>
                     <option value="mp3">MP3</option>
-                    <option value="wav">WAV</option>
+                    <option value="wav">WAV (không nén)</option>
                   </select>
                 </div>
+                {format === "mp3" && (
+                  <div className="tool-field">
+                    <label>Chất lượng MP3</label>
+                    <select value={bitrate} onChange={(e) => setBitrate(Number(e.target.value))} disabled={busy}>
+                      {BITRATES.map((b) => <option key={b} value={b}>{b} kbps</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="tool-row">
                 <button className="tool-btn" onClick={handleCut} disabled={busy}>
-                  <Scissors size={15} /> {busy ? "Đang xử lý..." : "Cắt và tải xuống"}
+                  <Scissors size={15} /> {busy ? "Đang xử lý..." : `Cắt và tải xuống (${formatDuration(resultLength)})`}
                 </button>
               </div>
             </>

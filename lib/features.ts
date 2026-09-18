@@ -16,8 +16,7 @@ export type AppFeature = {
 
 export const HIDDEN_NAV_FEATURE_SLUGS = new Set([
   "content.history",
-  "video.clypra",
-  "audio.tts"
+  "video.clypra"
 ]);
 
 export function visibleNavFeatures(features: AppFeature[]) {
@@ -152,7 +151,7 @@ const AUDIO_FEATURES: AppFeature[] = [
     name: "Tạo Giọng Nói AI",
     description: "Chuyển văn bản thành giọng đọc tự nhiên bằng AI, hỗ trợ kịch bản hội thoại đa nhân vật.",
     category: "audio",
-    route_path: PREMIUM_URL,
+    route_path: "/audio/tts",
     icon_name: "mic-vocal",
     sort_order: 10,
     is_admin_only: false,

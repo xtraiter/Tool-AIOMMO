@@ -26,6 +26,7 @@ const LazyMultiDownloader = dynamic(() => import("@/components/tools/MultiDownlo
 const LazyAlbumDownloader = dynamic(() => import("@/components/tools/AlbumDownloader").then((m) => ({ default: m.AlbumDownloader })), { ssr: false });
 const LazyBulkScanner = dynamic(() => import("@/components/tools/BulkScanner").then((m) => ({ default: m.BulkScanner })), { ssr: false });
 const LazyEcommerceInfo = dynamic(() => import("@/components/tools/EcommerceInfo").then((m) => ({ default: m.EcommerceInfo })), { ssr: false });
+const LazyAudioTTS = dynamic(() => import("@/components/tools/AudioTTS").then((m) => ({ default: m.AudioTTS })), { ssr: false });
 
 export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
   const validInitialSlug = initialSlug && DEFAULT_LOCAL_FEATURES.some((f) => f.slug === initialSlug) ? initialSlug : undefined;
@@ -96,12 +97,14 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     const hasAlbumDownloader = activeSlug === "premium.album";
     const hasBulkScanner = activeSlug === "premium.channel.scanner";
     const hasEcommerceInfo = activeSlug === "premium.product.info";
+    const hasAudioTTS = activeSlug === "premium.audio.tts";
 
     const showNone = !hasVideoCut && !hasVideoJoin && !hasVideoScreenrecord && !hasAudioCut && !hasAudioExtract
       && !hasAudioVolume && !hasAudioRecord && !hasUtilityZip && !hasVideoTimeline
       && !hasTipsAll && !hasTipsMobile && !hasTipsSocial && !hasTipsAiNews
-      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo;
+      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo && !hasAudioTTS;
 
+    if (hasAudioTTS) return <LazyAudioTTS />;
     if (hasVideoCut) return <LazyVideoCutter />;
     if (hasVideoJoin) return <LazyVideoJoiner />;
     if (hasVideoScreenrecord) return <LazyScreenRecorder />;

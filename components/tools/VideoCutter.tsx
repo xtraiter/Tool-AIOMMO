@@ -1,10 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Scissors, UploadCloud, Download, X } from "lucide-react";
+import { Scissors, UploadCloud, X, Zap, Target } from "lucide-react";
 import { fetchFile } from "@ffmpeg/util";
 import { loadSharedFfmpeg, formatBytes, formatDuration, downloadBlob } from "@/lib/ffmpegLoader";
 import { useBackgroundBusy } from "@/lib/backgroundEffect";
+import { makeFilmstrip } from "@/lib/mediaThumbs";
+import { useTrimPlayer } from "@/lib/useTrimPlayer";
+import { safeFilename } from "@/lib/filename";
+import { ProgressBar } from "./ProgressBar";
+import { TrimBar } from "./TrimBar";
 import "./tool-page.css";
 
 export function VideoCutter() {
@@ -13,6 +18,9 @@ export function VideoCutter() {
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(0);
   const [precise, setPrecise] = useState(false);
+  const [removeMode, setRemoveMode] = useState(false);
+  const [loop, setLoop] = useState(true);
+  const [thumbs, setThumbs] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -21,30 +29,37 @@ export function VideoCutter() {
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Memoized so re-renders (dragging the trim slider, progress updates...)
-  // don't create a fresh blob URL every time — that was forcing the <video>
-  // to reload/reset on every interaction.
+  // Memoized so re-renders (dragging handles, progress updates...) never recreate the blob URL.
   const fileUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
+
+  const player = useTrimPlayer(videoRef, { start, end }, loop);
+
+  // Filmstrip of video frames behind the trim handles.
   useEffect(() => {
-    return () => { if (fileUrl) URL.revokeObjectURL(fileUrl); };
-  }, [fileUrl]);
+    if (!fileUrl || duration <= 0) return;
+    let cancelled = false;
+    setThumbs([]);
+    makeFilmstrip(fileUrl, duration, Math.min(24, Math.max(8, Math.ceil(duration / 2))), 64, () => cancelled)
+      .then((frames) => { if (!cancelled) setThumbs(frames); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [fileUrl, duration]);
 
   function handleFile(f: File | null) {
     if (!f) return;
     setError("");
-    setFile(f);
     setStatus("");
-    const url = URL.createObjectURL(f);
-    const probe = document.createElement("video");
-    probe.preload = "metadata";
-    probe.src = url;
-    probe.onloadedmetadata = () => {
-      const d = probe.duration || 0;
-      setDuration(d);
-      setStart(0);
-      setEnd(d);
-      URL.revokeObjectURL(url);
-    };
+    setDuration(0);
+    setFile(f);
+  }
+
+  function onLoadedMetadata() {
+    const d = videoRef.current?.duration || 0;
+    if (!Number.isFinite(d) || d <= 0) return;
+    setDuration(d);
+    setStart(0);
+    setEnd(d);
   }
 
   async function handleCut() {
@@ -53,15 +68,17 @@ export function VideoCutter() {
       setError("Thời điểm kết thúc phải sau thời điểm bắt đầu.");
       return;
     }
+    videoRef.current?.pause();
     setBusy(true);
     setError("");
     setProgress(0);
     setStatus("Đang nạp bộ xử lý FFmpeg...");
+    let offProgress: (() => void) | undefined;
     try {
       const ffmpeg = await loadSharedFfmpeg();
-      const offProgress = ffmpeg.on("progress", ({ progress: p }) => {
-        setProgress(Math.min(100, Math.round(p * 100)));
-      });
+      const handler = ({ progress: p }: { progress: number }) => setProgress(Math.min(100, Math.max(0, Math.round(p * 100))));
+      ffmpeg.on("progress", handler);
+      offProgress = () => ffmpeg.off("progress", handler);
 
       const ext = (file.name.split(".").pop() || "mp4").toLowerCase();
       const inName = `in.${ext}`;
@@ -70,27 +87,51 @@ export function VideoCutter() {
       setStatus("Đang ghi tệp vào bộ nhớ xử lý...");
       await ffmpeg.writeFile(inName, await fetchFile(file));
 
-      setStatus("Đang cắt video...");
-      const args = precise
-        ? ["-i", inName, "-ss", String(start), "-to", String(end), "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", outName]
+      setStatus(removeMode ? "Đang xóa đoạn đã chọn và nối lại..." : precise ? "Đang cắt chính xác (mã hoá lại)..." : "Đang cắt nhanh...");
+      // "Remove" keeps [0,start] + [end,duration] and joins them; that always needs a re-encode.
+      const buildRemoveArgs = (withAudio: boolean) => {
+        const before = start > 0.05;
+        const after = end < duration - 0.05;
+        let graph = "";
+        const v: string[] = [];
+        const a: string[] = [];
+        if (before) {
+          graph += `[0:v]trim=start=0:end=${start},setpts=PTS-STARTPTS[v0];`;
+          v.push("[v0]");
+          if (withAudio) { graph += `[0:a]atrim=start=0:end=${start},asetpts=PTS-STARTPTS[a0];`; a.push("[a0]"); }
+        }
+        if (after) {
+          graph += `[0:v]trim=start=${end},setpts=PTS-STARTPTS[v1];`;
+          v.push("[v1]");
+          if (withAudio) { graph += `[0:a]atrim=start=${end},asetpts=PTS-STARTPTS[a1];`; a.push("[a1]"); }
+        }
+        const parts = v.map((label, i) => label + (withAudio ? a[i] : "")).join("");
+        graph += `${parts}concat=n=${v.length}:v=1:a=${withAudio ? 1 : 0}[vout]${withAudio ? "[aout]" : ""}`;
+        return ["-i", inName, "-filter_complex", graph, "-map", "[vout]", ...(withAudio ? ["-map", "[aout]", "-c:a", "aac"] : []), "-c:v", "libx264", "-preset", "veryfast", "-threads", "1", "-pix_fmt", "yuv420p", outName];
+      };
+      if (removeMode && start <= 0.05 && end >= duration - 0.05) throw new Error("Bạn đang chọn toàn bộ video để xóa. Hãy thu hẹp vùng chọn.");
+      const args = removeMode
+        ? buildRemoveArgs(true)
+        : precise
+        ? ["-i", inName, "-ss", String(start), "-to", String(end), "-c:v", "libx264", "-preset", "veryfast", "-threads", "1", "-c:a", "aac", outName]
         : ["-ss", String(start), "-to", String(end), "-i", inName, "-c", "copy", outName];
 
-      const exitCode = await ffmpeg.exec(args);
-      if (exitCode !== 0) {
-        throw new Error("FFmpeg xử lý thất bại. Hãy thử bật chế độ cắt chính xác.");
-      }
+      let exitCode = await ffmpeg.exec(args);
+      if (exitCode !== 0 && removeMode) exitCode = await ffmpeg.exec(buildRemoveArgs(false)); // source has no audio track
+      if (exitCode !== 0) throw new Error("FFmpeg xử lý thất bại. Hãy thử chế độ cắt chính xác.");
 
       const data = await ffmpeg.readFile(outName);
       const blob = new Blob([data as BlobPart], { type: "video/mp4" });
-      downloadBlob(blob, `cat_${file.name.replace(/\.[^.]+$/, "")}.mp4`);
-      setStatus(`Hoàn tất! Đã tải xuống video dài ${formatDuration(end - start)}.`);
+      const base = file.name.replace(/\.[^.]+$/, "");
+      downloadBlob(blob, safeFilename(`${base} (cắt)`, outName.split(".").pop() || "mp4"));
+      setStatus(`Hoàn tất! Đã tải xuống video dài ${formatDuration(removeMode ? duration - (end - start) : end - start)}.`);
 
       await ffmpeg.deleteFile(inName).catch(() => {});
       await ffmpeg.deleteFile(outName).catch(() => {});
-      offProgress?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra khi cắt video.");
     } finally {
+      offProgress?.();
       setBusy(false);
     }
   }
@@ -100,6 +141,7 @@ export function VideoCutter() {
     setDuration(0);
     setStart(0);
     setEnd(0);
+    setThumbs([]);
     setError("");
     setStatus("");
     if (inputRef.current) inputRef.current.value = "";
@@ -109,7 +151,7 @@ export function VideoCutter() {
     <div className="tool-page">
       <h1><Scissors size={22} /> Cắt Video</h1>
       <p className="tool-subtitle">
-        Chọn đoạn cần giữ lại, video được xử lý hoàn toàn trên trình duyệt của bạn bằng FFmpeg WebAssembly — không tải file lên máy chủ nào.
+        Kéo hai đầu vàng để chọn đoạn cần giữ, xem trước ngay, tinh chỉnh từng 0,1 giây. Xử lý hoàn toàn trên thiết bị của bạn, không tải file lên máy chủ.
       </p>
 
       {!file ? (
@@ -123,70 +165,63 @@ export function VideoCutter() {
         </div>
       ) : (
         <div className="tool-card">
-          <video ref={videoRef} src={fileUrl ?? undefined} controls className="tool-video-preview" />
+          <video
+            ref={videoRef}
+            src={fileUrl ?? undefined}
+            playsInline
+            preload="metadata"
+            onLoadedMetadata={onLoadedMetadata}
+            onClick={player.toggle}
+            className="tool-video-preview vc-video"
+          />
           <div className="tool-file-row">
             <span className="tool-file-name">{file.name}</span>
             <span className="tool-file-meta">{formatBytes(file.size)} · {formatDuration(duration)}</span>
-            <button className="tool-icon-btn" onClick={reset} title="Bỏ chọn"><X size={16} /></button>
+            <button className="tool-icon-btn" onClick={reset} title="Bỏ chọn" disabled={busy}><X size={16} /></button>
           </div>
 
-          <p style={{ fontSize: 11.5, color: "var(--muted)", margin: "0 0 4px" }}>
-            Kéo thanh trượt chỉ để chọn nhanh — để cắt chính xác, hãy tạm dừng video ở đúng vị trí rồi bấm &quot;Đặt tại đây&quot;, hoặc gõ thẳng số giây.
-          </p>
-          <div className="tool-row">
-            <div className="tool-field">
-              <label>Bắt đầu ({formatDuration(start)})</label>
-              <div className="tool-slider-row">
-                <input type="range" min={0} max={duration} step={0.01} value={start}
-                  onChange={(e) => setStart(Math.min(Number(e.target.value), end - 0.1))} />
-              </div>
-              <div className="tool-precise-row">
-                <input type="number" min={0} max={Math.max(0, end - 0.1)} step={0.1}
-                  value={Number(start.toFixed(2))}
-                  onChange={(e) => setStart(Math.max(0, Math.min(Number(e.target.value) || 0, end - 0.1)))} />
-                <span className="tool-precise-unit">giây</span>
-                <button type="button" className="tool-btn tool-btn-secondary tool-mark-btn"
-                  onClick={() => { if (videoRef.current) setStart(Math.min(videoRef.current.currentTime, end - 0.1)); }}>
-                  Đặt tại đây
-                </button>
-              </div>
-            </div>
-            <div className="tool-field">
-              <label>Kết thúc ({formatDuration(end)})</label>
-              <div className="tool-slider-row">
-                <input type="range" min={0} max={duration} step={0.01} value={end}
-                  onChange={(e) => setEnd(Math.max(Number(e.target.value), start + 0.1))} />
-              </div>
-              <div className="tool-precise-row">
-                <input type="number" min={start + 0.1} max={duration} step={0.1}
-                  value={Number(end.toFixed(2))}
-                  onChange={(e) => setEnd(Math.max(start + 0.1, Math.min(Number(e.target.value) || 0, duration)))} />
-                <span className="tool-precise-unit">giây</span>
-                <button type="button" className="tool-btn tool-btn-secondary tool-mark-btn"
-                  onClick={() => { if (videoRef.current) setEnd(Math.max(videoRef.current.currentTime, start + 0.1)); }}>
-                  Đặt tại đây
-                </button>
-              </div>
-            </div>
+          <div className="cut-keep" role="radiogroup" aria-label="Kiểu cắt">
+            <button type="button" role="radio" aria-checked={!removeMode} className={!removeMode ? "is-active" : ""} onClick={() => setRemoveMode(false)} disabled={busy}>Giữ đoạn đã chọn</button>
+            <button type="button" role="radio" aria-checked={removeMode} className={removeMode ? "is-active is-remove" : ""} onClick={() => setRemoveMode(true)} disabled={busy}>Xóa đoạn đã chọn</button>
           </div>
 
-          <div className="tool-row" style={{ alignItems: "center" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-              <input type="checkbox" checked={precise} onChange={(e) => setPrecise(e.target.checked)} />
-              Cắt chính xác (mã hoá lại, chậm hơn nhưng đúng từng khung hình)
-            </label>
+          <TrimBar
+            duration={duration}
+            start={start}
+            end={end}
+            onChange={(s, e) => { setStart(s); setEnd(e); }}
+            current={player.current}
+            onSeek={player.seek}
+            playing={player.playing}
+            onTogglePlay={player.toggle}
+            loop={loop}
+            onLoopChange={setLoop}
+            thumbs={thumbs}
+            mode={removeMode ? "remove" : "keep"}
+            disabled={duration <= 0 || busy}
+          />
+
+          {!removeMode && (
+          <div className="cut-mode" role="radiogroup" aria-label="Chế độ cắt">
+            <button type="button" role="radio" aria-checked={!precise} className={!precise ? "is-active" : ""} onClick={() => setPrecise(false)} disabled={busy}>
+              <Zap size={16} />
+              <span><strong>Cắt nhanh</strong><small>Giữ nguyên chất lượng, xong trong vài giây. Có thể lệch vài khung hình.</small></span>
+            </button>
+            <button type="button" role="radio" aria-checked={precise} className={precise ? "is-active" : ""} onClick={() => setPrecise(true)} disabled={busy}>
+              <Target size={16} />
+              <span><strong>Cắt chính xác</strong><small>Đúng từng khung hình. Mã hoá lại nên chậm hơn.</small></span>
+            </button>
           </div>
+          )}
 
           <div className="tool-row">
-            <button className="tool-btn" onClick={handleCut} disabled={busy}>
+            <button className="tool-btn" onClick={handleCut} disabled={busy || duration <= 0}>
               <Scissors size={15} /> {busy ? `Đang xử lý (${progress}%)` : "Cắt và tải xuống"}
             </button>
           </div>
 
-          {busy && (
-            <div className="tool-progress-track"><div className="tool-progress-fill" style={{ width: `${progress}%` }} /></div>
-          )}
-          {status && !error && <div className="tool-status-ok">{status}</div>}
+          {busy && <ProgressBar percent={progress} label={status} />}
+          {status && !error && !busy && <div className="tool-status-ok">{status}</div>}
           {error && <div className="tool-status-error">{error}</div>}
         </div>
       )}
