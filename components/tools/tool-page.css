@@ -356,3 +356,25 @@
   .dl-selects { flex: 1; min-width: 260px; }
   .dl-submit { width: auto; }
 }
+
+/* E-commerce: bookmarklet helper */
+.ec-helper {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  padding: 4px 14px;
+}
+.ec-helper summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ec-helper ol { margin: 4px 0 12px; padding-left: 20px; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+.ec-helper ol strong { color: var(--text); }
+.ec-helper-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.ec-helper-actions a.tool-btn { text-decoration: none; cursor: grab; }
