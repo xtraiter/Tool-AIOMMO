@@ -38,5 +38,14 @@ export async function ytDlp(options: string[], url: string): Promise<{ stdout: s
   if (!_ytDlpPath) {
     _ytDlpPath = await getYtDlpPath();
   }
-  return execFileAsync(_ytDlpPath, [...options, "--", url], { timeout: 60000, maxBuffer: 20 * 1024 * 1024 });
+  // IPv4 + socket timeout avoid hangs on hosts with broken IPv6; the node
+  // runtime lets yt-dlp solve YouTube's JS challenges; skipping format checks
+  // avoids test-downloading fragments.
+  const base = ["--force-ipv4", "--socket-timeout", "20", "--js-runtimes", "node", "--no-check-formats"];
+  try {
+    return await execFileAsync(_ytDlpPath, [...base, ...options, "--", url], { timeout: 90000, maxBuffer: 20 * 1024 * 1024 });
+  } catch (err: any) {
+    const detail = String(err?.stderr || "").split("\n").filter((l) => l.includes("ERROR")).pop();
+    throw new Error(detail ? detail.replace(/^ERROR:\s*/, "").slice(0, 200) : "yt-dlp không lấy được dữ liệu từ link này.");
+  }
 }
