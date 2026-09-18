@@ -3,11 +3,12 @@ import { ytDlp } from "@/lib/ytdlp";
 import { assertPublicHttpUrl, safeFetchText } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
 import { mediaProxyUrl } from "@/lib/signedUrl";
+import { detectPlatform as detectSite } from "@/lib/platforms";
 
 // Detect platform from URL
 function detectPlatform(url: string): "shopee" | "tiktok_shop" | "lazada" | "unknown" {
   if (url.includes("shopee.vn") || url.includes("shopee.com")) return "shopee";
-  if (url.includes("tiktok.com") && url.includes("item")) return "tiktok_shop";
+  if (url.includes("tiktok.com") && (url.includes("item") || url.includes("/product"))) return "tiktok_shop";
   if (url.includes("lazada.vn") || url.includes("lazada.com")) return "lazada";
   return "unknown";
 }
@@ -130,7 +131,8 @@ export async function POST(req: NextRequest) {
     } else if (platform === "tiktok_shop") {
       result = await scrapeTikTokShop(url);
     } else {
-      result = await curlFallback(url, "E-Commerce");
+      const site = detectSite(url);
+      result = await curlFallback(url, site.id === "unknown" ? "E-Commerce" : site.name);
     }
 
     // Product CDNs block hotlinking, so route images through the signed media proxy.

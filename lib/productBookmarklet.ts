@@ -15,6 +15,7 @@ if(x["@graph"])walk(x["@graph"]);}
 [].forEach.call(d.querySelectorAll('script[type="application/ld+json"]'),function(s){try{walk(JSON.parse(s.textContent));}catch(e){}});
 if(!o.title)o.title=meta("og:title")||(d.querySelector("h1")||{}).textContent||d.title;
 o.title=(o.title||"").trim();
+if(/security check|captcha|verify|xác minh|just a moment|access denied/i.test(o.title+" "+d.title)&&!(o.images.length>3)){alert("Trang đang yêu cầu xác minh (ví dụ kéo mảnh ghép). Hãy hoàn tất xác minh, đợi trang sản phẩm hiện ra rồi bấm lại dấu trang.");return;}
 if(!o.description)o.description=meta("og:description")||meta("description");
 add(o.images,meta("og:image"));
 [].forEach.call(d.querySelectorAll("img"),function(i){var s=i.currentSrc||i.src||"";
