@@ -12,6 +12,9 @@ tsconfig.tsbuildinfo
 # Local build/deploy artifacts
 *.zip
 
+# Per-machine AI agent context/rules — not shared project code
+.agents/
+
 # Environment and secrets
 .env
 .env.local
