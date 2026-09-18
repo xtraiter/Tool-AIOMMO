@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
 import { assertPublicHttpUrl } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
-import { detectPlatform } from "@/lib/platforms";
+import { detectPlatform, UNSUPPORTED_BY_YTDLP } from "@/lib/platforms";
 import { mediaProxyUrl } from "@/lib/signedUrl";
 
 export async function POST(req: NextRequest) {
@@ -18,6 +18,10 @@ export async function POST(req: NextRequest) {
     }
 
     const safe = await assertPublicHttpUrl(url);
+    const detected = detectPlatform(safe.href);
+    if (UNSUPPORTED_BY_YTDLP.has(detected.id)) {
+      return NextResponse.json({ error: `Đã nhận diện ${detected.name} nhưng hiện chưa hỗ trợ tải từ nền tảng này.` }, { status: 422 });
+    }
     console.log(`[API] Đang trích xuất: ${safe.href}`);
 
     const { stdout } = await ytDlp(["--dump-json", "--no-warnings", "--no-playlist"], safe.href);

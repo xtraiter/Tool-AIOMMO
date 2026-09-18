@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
 import { assertPublicHttpUrl, safeFetchPage } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
-import { detectPlatform } from "@/lib/platforms";
+import { detectPlatform, UNSUPPORTED_BY_YTDLP } from "@/lib/platforms";
 import { mediaProxyUrl } from "@/lib/signedUrl";
 import { extractTikTokPhotos } from "@/lib/tiktokPhotos";
 import { safeFilename } from "@/lib/filename";
@@ -34,6 +34,10 @@ export async function POST(req: NextRequest) {
     }
 
     let safe = await assertPublicHttpUrl(url);
+    const detected = detectPlatform(safe.href);
+    if (UNSUPPORTED_BY_YTDLP.has(detected.id)) {
+      return NextResponse.json({ error: `Đã nhận diện ${detected.name} nhưng hiện chưa hỗ trợ tải từ nền tảng này.` }, { status: 422 });
+    }
     let platform = detectPlatform(safe.href);
     console.log(`[API/album] ${platform.name}: ${safe.href}`);
 

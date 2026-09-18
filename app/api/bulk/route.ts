@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
 import { assertPublicHttpUrl } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
+import { extractLinks } from "@/lib/extractLinks";
 
 export async function POST(req: NextRequest) {
   if (rateLimited(req, "bulk")) {
@@ -15,11 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Vui lòng cung cấp ít nhất 1 URL." }, { status: 400 });
     }
 
-    const urlList = urls
-      .split("\n")
-      .map((u: string) => u.trim())
-      .filter((u: string) => u.startsWith("http"))
-      .slice(0, 20);
+    const urlList = extractLinks(urls, 20);
 
     if (urlList.length === 0) {
       return NextResponse.json({ error: "Không tìm thấy URL hợp lệ. Hãy đảm bảo mỗi link nằm trên 1 dòng riêng." }, { status: 400 });

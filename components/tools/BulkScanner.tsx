@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Radar, AlertCircle, PlaySquare, ListPlus } from "lucide-react";
 import { ProgressBar } from "./ProgressBar";
+import { extractLinks } from "@/lib/extractLinks";
+import { detectPlatform } from "@/lib/platforms";
 import "./tool-page.css";
 
 export function BulkScanner() {
@@ -12,6 +14,15 @@ export function BulkScanner() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
+  const detected = extractLinks(urls, 20);
+  const summary = Object.entries(
+    detected.reduce<Record<string, number>>((acc, l) => {
+      const n = detectPlatform(l).name;
+      acc[n] = (acc[n] || 0) + 1;
+      return acc;
+    }, {})
+  ).map(([n, c]) => `${n} ×${c}`).join(", ");
+
   const handleFetch = async () => {
     if (!urls.trim()) return;
     setLoading(true);
@@ -19,8 +30,8 @@ export function BulkScanner() {
     setResult([]);
 
     try {
-      const links = urls.split("\n").map((u) => u.trim()).filter((u) => u.startsWith("http")).slice(0, 20);
-      if (links.length === 0) throw new Error("Không tìm thấy URL hợp lệ. Mỗi link nằm trên 1 dòng riêng.");
+      const links = extractLinks(urls, 20);
+      if (links.length === 0) throw new Error("Không tìm thấy đường dẫn nào trong văn bản. Hãy dán nội dung có chứa link http(s).");
 
       const items: any[] = [];
       const failures: string[] = [];
@@ -75,6 +86,11 @@ export function BulkScanner() {
               style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--bg-card)", resize: 'vertical' }}
             />
           </div>
+          {detected.length > 0 && (
+            <p className="tool-status-text" style={{ margin: 0 }}>
+              Tự nhận diện {detected.length} link: {summary}
+            </p>
+          )}
           <button className="tool-btn" onClick={handleFetch} disabled={loading || !urls.trim()} style={{ width: 'fit-content' }}>
             <Radar size={16} /> {loading ? "Đang quét dữ liệu..." : "Quét danh sách"}
           </button>

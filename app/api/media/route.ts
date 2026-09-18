@@ -3,20 +3,12 @@ import { Readable } from "stream";
 import { safeFetch } from "@/lib/safeUrl";
 import { verifyUrl } from "@/lib/signedUrl";
 import { rateLimited } from "@/lib/rateLimit";
-import { detectPlatform } from "@/lib/platforms";
+import { platformReferer } from "@/lib/platforms";
 import { cleanName, contentDisposition } from "@/lib/filename";
 
 export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 60 * 1024 * 1024;
-const REFERERS: Record<string, string> = {
-  tiktok: "https://www.tiktok.com/",
-  douyin: "https://www.douyin.com/",
-  instagram: "https://www.instagram.com/",
-  facebook: "https://www.facebook.com/",
-  pinterest: "https://www.pinterest.com/",
-  twitter: "https://x.com/",
-};
 
 // Streams a media URL that this server itself issued (HMAC-signed), so it
 // cannot be used as an open proxy. Needed because CDNs block hotlinking/CORS.
@@ -30,7 +22,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Liên kết không hợp lệ hoặc đã hết hạn." }, { status: 403 });
   }
   try {
-    const referer = REFERERS[detectPlatform(src).id];
+    const referer = platformReferer(src);
     const { res } = await safeFetch(src, {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
       ...(referer ? { Referer: referer } : {}),
