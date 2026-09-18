@@ -28,8 +28,14 @@ async function scrapeShopee(url: string) {
     }
   }
 
-  // Fallback: extract og: meta tags
-  const title = stdout.match(/<meta property="og:title" content="([^"]+)"/)?.[1] || "Không thể lấy tên sản phẩm";
+  // Shopee serves an empty app shell / verification page to server-side requests.
+  const ogTitle = stdout.match(/<meta property="og:title" content="([^"]+)"/)?.[1];
+  if (!ogTitle) {
+    throw new Error(
+      "Shopee đang chặn truy cập tự động từ máy chủ (yêu cầu đăng nhập/xác minh), nên không thể lấy dữ liệu sản phẩm từ link này."
+    );
+  }
+  const title = ogTitle;
   const description = stdout.match(/<meta name="description" content="([^"]+)"/)?.[1] || "";
   const image = stdout.match(/<meta property="og:image" content="([^"]+)"/)?.[1] || "";
   const price = stdout.match(/itemPrice.*?"([\d,\.]+)"/)?.[1] || 
@@ -79,6 +85,10 @@ async function curlFallback(url: string, platform: string) {
                 stdout.match(/<title>([^<]+)<\/title>/)?.[1] || "Sản phẩm";
   const description = stdout.match(/<meta name="description" content="([^"]+)"/)?.[1] || "";
   const image = stdout.match(/<meta property="og:image" content="([^"]+)"/)?.[1] || "";
+
+  if (!stdout.match(/<meta property="og:title"/) && !stdout.match(/<title>[^<]+<\/title>/)) {
+    throw new Error("Trang này không cung cấp thông tin sản phẩm cho truy cập tự động.");
+  }
 
   return {
     platform,
