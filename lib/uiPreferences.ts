@@ -9,12 +9,13 @@ const THEME_STORAGE_KEY = "aio-theme";
 const LOCALE_STORAGE_KEY = "aio-locale";
 const PREFERENCE_EVENT = "aio-ui-preference-change";
 
-let memoryTheme: UiTheme = "light";
+let memoryTheme: UiTheme = "dark";
 let memoryLocale: UiLocale = "vi";
 
 function readTheme(): UiTheme {
   try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
+    // Dark is the default; only an explicit "light" choice switches it off.
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
   } catch {
     return memoryTheme;
   }
@@ -57,7 +58,7 @@ function updatePreference(key: string, value: string) {
 }
 
 export function useUiPreferences() {
-  const theme = useSyncExternalStore(subscribe, readTheme, () => "light" as UiTheme);
+  const theme = useSyncExternalStore(subscribe, readTheme, () => "dark" as UiTheme);
   const locale = useSyncExternalStore(subscribe, readLocale, () => "vi" as UiLocale);
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export function useUiPreferences() {
   }, [locale, theme]);
 
   const toggleTheme = () => {
-    memoryTheme = readTheme() === "light" ? "dark" : "light";
+    memoryTheme = readTheme() === "dark" ? "light" : "dark";
     updatePreference(THEME_STORAGE_KEY, memoryTheme);
   };
 

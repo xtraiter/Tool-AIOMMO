@@ -68,6 +68,9 @@ export function VocalSeparator() {
     })();
   }, []);
 
+  // Leaving the page (or pressing "Làm mới") stops a running separation.
+  useEffect(() => () => { cancelled.current = true; }, []);
+
   useEffect(() => () => Object.values(previews).forEach((u) => u && URL.revokeObjectURL(u)), [previews]);
 
   function reset() {

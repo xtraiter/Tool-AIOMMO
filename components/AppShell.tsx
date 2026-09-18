@@ -14,7 +14,8 @@ import {
   Film,
   Music,
   FolderArchive,
-  Lightbulb
+  Lightbulb,
+  RotateCcw
 } from "lucide-react";
 import { visibleNavFeatures, NAV_CATEGORY_ORDER, type AppFeature } from "@/lib/features";
 import { badgeLabel, categoryLabel, featureDescription, featureName, useUiPreferences } from "@/lib/uiPreferences";
@@ -43,10 +44,12 @@ type Props = {
   features: AppFeature[];
   activeSlug: string;
   onSelect: (slug: string) => void;
+  /** Provided only while a tool is open: resets that tool to its initial state. */
+  onRefresh?: () => void;
   children: React.ReactNode;
 };
 
-export function AppShell({ features, activeSlug, onSelect, children }: Props) {
+export function AppShell({ features, activeSlug, onSelect, onRefresh, children }: Props) {
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ left: number; top: number } | null>(null);
   const [mobileSheetCategory, setMobileSheetCategory] = useState<string | null>(null);
@@ -314,6 +317,17 @@ export function AppShell({ features, activeSlug, onSelect, children }: Props) {
                 </div>
               )}
             </div>
+          )}
+          {onRefresh && (
+            <button
+              className="tn-refresh-btn"
+              onClick={onRefresh}
+              aria-label={locale === "en" ? "Refresh tool" : "Làm mới công cụ"}
+              title={locale === "en" ? "Reset this tool" : "Xóa dữ liệu và bắt đầu lại"}
+            >
+              <RotateCcw size={15} />
+              <span>{locale === "en" ? "Refresh" : "Làm mới"}</span>
+            </button>
           )}
           <button className="tn-icon-btn" onClick={toggleTheme}
             aria-label={theme === "light" ? "Dark mode" : "Light mode"}>

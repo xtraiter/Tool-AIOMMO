@@ -31,6 +31,8 @@ export function EcommerceInfo() {
   const [copied, setCopied] = useState("");
   const [zipping, setZipping] = useState<{ done: number; total: number } | null>(null);
   const bookmarkRef = useRef<HTMLAnchorElement>(null);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [bookmarklet, setBookmarklet] = useState("");
 
   useEffect(() => {
@@ -112,6 +114,7 @@ export function EcommerceInfo() {
       const zip = new JSZip();
       zip.file("thong-tin.txt", `${result.title}\n${result.price}\n\n${result.description}\n\n${result.source_url || ""}`);
       for (let i = 0; i < files.length; i++) {
+        if (!alive.current) return;
         const res = await fetch(files[i].u);
         if (res.ok) zip.file(files[i].name, await res.blob());
         setZipping({ done: i + 1, total: files.length });

@@ -2,11 +2,14 @@
 
 import dynamic from "next/dynamic";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { DEFAULT_LOCAL_FEATURES, type AppFeature } from "@/lib/features";
 import { ToolsLandingPage } from "@/features/landing/ToolsLandingPage";
 import { EmbedPage } from "@/components/tools/EmbedPage";
+import { isBackgroundBusy } from "@/lib/backgroundEffect";
+import { terminateSharedFfmpeg } from "@/lib/ffmpegLoader";
+import { useUiPreferences } from "@/lib/uiPreferences";
 import { Layers3, Smartphone, Share2, Bot } from "lucide-react";
 
 const LazyVideoCutter = dynamic(() => import("@/components/tools/VideoCutter").then((m) => ({ default: m.VideoCutter })), { ssr: false });
@@ -30,6 +33,8 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const urlSyncedRef = useRef(false);
+  const [resetKey, setResetKey] = useState(0);
+  const { locale } = useUiPreferences();
 
   // Keep the URL in sync with whichever tool is open — however the switch
   // happened (homepage card, nav dropdown, mobile sheet) — so an F5 reload
@@ -53,6 +58,24 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     window.addEventListener("app:change-slug", handleEvent);
     return () => window.removeEventListener("app:change-slug", handleEvent);
   }, []);
+
+  let isTool = false;
+
+  // Remounting the open tool (new key) resets every piece of its state; if something is
+  // still processing, ask first and stop any running FFmpeg job.
+  function refreshTool() {
+    if (isBackgroundBusy()) {
+      const ok = window.confirm(
+        locale === "en"
+          ? "A task is still running. Refreshing will cancel it and clear this tool. Continue?"
+          : "Đang có tác vụ xử lý. Làm mới sẽ hủy tác vụ và xóa dữ liệu của công cụ này. Tiếp tục?"
+      );
+      if (!ok) return;
+      terminateSharedFfmpeg();
+    }
+    setResetKey((k) => k + 1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   function renderActive() {
     const hasVideoCut = activeSlug === "video.cut";
@@ -101,9 +124,12 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     return null;
   }
 
+  const content = renderActive();
+  isTool = content !== null && activeSlug !== "" && DEFAULT_LOCAL_FEATURES.some((f) => f.slug === activeSlug);
+
   return (
-    <AppShell features={DEFAULT_LOCAL_FEATURES} activeSlug={activeSlug} onSelect={setActiveSlug}>
-      {renderActive()}
+    <AppShell features={DEFAULT_LOCAL_FEATURES} activeSlug={activeSlug} onSelect={setActiveSlug} onRefresh={isTool ? refreshTool : undefined}>
+      <Fragment key={`${activeSlug}:${resetKey}`}>{content}</Fragment>
     </AppShell>
   );
 }

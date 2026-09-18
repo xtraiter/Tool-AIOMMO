@@ -377,3 +377,31 @@
   .tn-categories { display: none; }
   .tn-mobile-tabbar { display: flex; }
 }
+
+/* "Làm mới" — resets the open tool; label collapses to an icon on narrow screens. */
+.tn-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.tn-refresh-btn:hover { background: var(--hover-background); }
+.tn-refresh-btn:active { transform: scale(0.96); }
+.tn-refresh-btn:hover svg { transform: rotate(-90deg); }
+.tn-refresh-btn svg { transition: transform 0.25s ease; }
+@media (max-width: 640px) {
+  .tn-refresh-btn { width: 34px; padding: 0; justify-content: center; }
+  .tn-refresh-btn span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tn-refresh-btn svg { transition: none; }
+}

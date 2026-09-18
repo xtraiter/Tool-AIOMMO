@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Search, AlertCircle, Video, Music, Copy, Check } from "lucide-react";
 import { parseContentDisposition } from "@/lib/filename";
 import { ProgressBar } from "./ProgressBar";
@@ -42,6 +42,8 @@ export function MultiDownloader() {
   const [dlPercent, setDlPercent] = useState<number | null>(null);
   const [dlLabel, setDlLabel] = useState("");
   const [copied, setCopied] = useState<"" | "title" | "desc">("");
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const handleFetch = async () => {
     if (!url.trim()) return;
@@ -92,6 +94,7 @@ export function MultiDownloader() {
 
       // Phase 1: the server downloads/converts — poll its real percentage (0-90% download, then convert).
       for (;;) {
+        if (!alive.current) return;
         const st = await (await fetch(`/api/download/status?id=${started.id}`)).json();
         if (st.error && st.status !== "done") throw new Error(st.error);
         setDlPercent(Math.round(st.percent * 0.7));
@@ -109,6 +112,7 @@ export function MultiDownloader() {
       let got = 0;
       setDlLabel("Đang tải file về máy...");
       for (;;) {
+        if (!alive.current) { reader.cancel().catch(() => {}); return; }
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value);

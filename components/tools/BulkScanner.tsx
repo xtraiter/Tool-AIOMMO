@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Radar, AlertCircle, PlaySquare, ListPlus } from "lucide-react";
 import { ProgressBar } from "./ProgressBar";
 import { extractLinks } from "@/lib/extractLinks";
@@ -12,6 +12,8 @@ export function BulkScanner() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any[]>([]);
   const [error, setError] = useState("");
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const detected = extractLinks(urls, 20);
@@ -37,6 +39,7 @@ export function BulkScanner() {
       const failures: string[] = [];
       setProgress({ done: 0, total: links.length });
       for (let i = 0; i < links.length; i++) {
+        if (!alive.current) return;
         try {
           const res = await fetch("/api/bulk", {
             method: "POST",

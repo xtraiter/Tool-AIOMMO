@@ -27,7 +27,15 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi">
+    <html lang="vi" data-theme="dark" suppressHydrationWarning>
+      <head>
+        {/* Apply the saved theme before first paint (dark by default) to avoid a light flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("aio-theme");document.documentElement.dataset.theme=t==="light"?"light":"dark"}catch(e){}`,
+          }}
+        />
+      </head>
       <body>
         <div id="site-content" className="site-content" tabIndex={-1}>{children}</div>
       </body>

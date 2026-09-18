@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search, AlertCircle, ImageIcon, DownloadCloud } from "lucide-react";
 import JSZip from "jszip";
 import { safeFilename } from "@/lib/filename";
@@ -16,6 +16,8 @@ export function AlbumDownloader() {
   const [error, setError] = useState("");
   const [meta, setMeta] = useState<{ platform: string; title: string } | null>(null);
   const [zipping, setZipping] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [zipProgress, setZipProgress] = useState(0);
 
   const handleZip = async () => {
@@ -25,6 +27,7 @@ export function AlbumDownloader() {
     try {
       const zip = new JSZip();
       for (let i = 0; i < result.length; i++) {
+        if (!alive.current) return;
         const res = await fetch(result[i].url);
         if (!res.ok) throw new Error(`Không tải được ảnh ${i + 1}.`);
         zip.file(`image_${String(i + 1).padStart(2, "0")}.${result[i].ext || "jpg"}`, await res.blob());

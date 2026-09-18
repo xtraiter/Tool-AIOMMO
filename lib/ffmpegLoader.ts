@@ -33,6 +33,13 @@ export async function loadSharedFfmpeg(onLog?: (message: string) => void): Promi
   return loadingPromise;
 }
 
+/** Stops any running FFmpeg job (used by the "Làm mới" button); the next run loads a fresh instance. */
+export function terminateSharedFfmpeg() {
+  try { sharedFfmpeg?.terminate(); } catch { /* already stopped */ }
+  sharedFfmpeg = null;
+  loadingPromise = null;
+}
+
 export function formatBytes(bytes: number): string {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
