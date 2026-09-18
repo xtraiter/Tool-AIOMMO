@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { Search, AlertCircle, ImageIcon, DownloadCloud } from "lucide-react";
-import { placeholderImage } from "@/lib/placeholderImage";
 import "./tool-page.css";
+
+type AlbumItem = { url: string; thumbnail: string; title: string; ext: string };
 
 export function AlbumDownloader() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<string[]>([]);
+  const [result, setResult] = useState<AlbumItem[]>([]);
   const [error, setError] = useState("");
 
   const handleFetch = async () => {
@@ -18,27 +19,30 @@ export function AlbumDownloader() {
     setResult([]);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_DOWNLOAD_API || "";
-      console.log("Fetching from API:", apiUrl);
+      const res = await fetch("/api/album", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
 
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const data = await res.json();
 
-      if (url.includes("error")) {
-        throw new Error("Không thể trích xuất album từ đường dẫn này.");
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Không thể trích xuất dữ liệu.");
       }
 
-      setResult([
-        placeholderImage("Ảnh 1", 600, 800),
-        placeholderImage("Ảnh 2", 600, 800),
-        placeholderImage("Ảnh 3", 600, 800),
-        placeholderImage("Ảnh 4", 600, 800),
-      ]);
+      if (!data.items || data.items.length === 0) {
+        throw new Error("Không tìm thấy ảnh nào trong link này.");
+      }
+
+      setResult(data.items); // items: [{ url, thumbnail, title, ext }]
     } catch (err: any) {
       setError(err.message || "Có lỗi xảy ra khi lấy dữ liệu.");
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="tool-page">
@@ -81,10 +85,10 @@ export function AlbumDownloader() {
             </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px' }}>
-              {result.map((img, idx) => (
+              {result.map((item, idx) => (
                 <div key={idx} style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                  <img src={img} alt={`Album img ${idx + 1}`} style={{ width: '100%', display: 'block', aspectRatio: '3/4', objectFit: 'cover' }} />
-                  <a href={img} download={`image_${idx + 1}.jpg`} style={{ 
+                  <img src={item.thumbnail || item.url} alt={item.title || `Album img ${idx + 1}`} style={{ width: '100%', display: 'block', aspectRatio: '3/4', objectFit: 'cover' }} />
+                  <a href={item.url} download={`image_${idx + 1}.${item.ext || 'jpg'}`} style={{ 
                     position: 'absolute', bottom: '8px', right: '8px', 
                     background: 'rgba(0,0,0,0.6)', color: 'white', padding: '4px 8px', 
                     borderRadius: '4px', fontSize: '12px', textDecoration: 'none'

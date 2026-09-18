@@ -17,27 +17,30 @@ export function BulkScanner() {
     setResult([]);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_DOWNLOAD_API || "";
-      console.log("Fetching from API:", apiUrl);
+      const res = await fetch("/api/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls: urls.trim() }),
+      });
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const data = await res.json();
 
-      if (urls.includes("error")) {
-        throw new Error("Không thể quét danh sách này.");
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Không thể quét danh sách này.");
       }
 
-      setResult([
-        { id: 1, title: "Video TikTok 1", duration: "00:15", status: "ready" },
-        { id: 2, title: "Video TikTok 2", duration: "00:20", status: "ready" },
-        { id: 3, title: "Video TikTok 3", duration: "00:45", status: "ready" },
-        { id: 4, title: "Video Facebook", duration: "01:30", status: "ready" },
-      ]);
+      if (!data.items || data.items.length === 0) {
+        throw new Error("Không tìm thấy video nào trong link này.");
+      }
+
+      setResult(data.items); // items: [{ id, title, duration, thumbnail, url, ext }]
     } catch (err: any) {
       setError(err.message || "Có lỗi xảy ra khi quét dữ liệu.");
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="tool-page">

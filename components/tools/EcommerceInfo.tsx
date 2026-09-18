@@ -18,32 +18,26 @@ export function EcommerceInfo() {
     setResult(null);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_DOWNLOAD_API || "";
-      console.log("Fetching from API:", apiUrl);
+      const res = await fetch("/api/ecommerce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const data = await res.json();
 
-      if (url.includes("error")) {
-        throw new Error("Không thể bóc tách dữ liệu từ sản phẩm này.");
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Không thể trích xuất dữ liệu sản phẩm.");
       }
 
-      setResult({
-        title: "Áo Thun Nam Nữ Unisex Phông Rộng Dáng Đẹp",
-        price: "150.000đ - 180.000đ",
-        description: "Chất liệu cotton 100% thoáng mát.\\nBảo hành 1 đổi 1 trong 7 ngày.\\nPhù hợp mặc đi chơi, đi học.",
-        images: [
-          placeholderImage("Ảnh SP 1", 300, 300),
-          placeholderImage("Ảnh SP 2", 300, 300),
-          placeholderImage("Ảnh SP 3", 300, 300)
-        ],
-        videos: 1
-      });
+      setResult(data); // { platform, title, price, description, images[], videos[] }
     } catch (err: any) {
       setError(err.message || "Có lỗi xảy ra khi bóc tách dữ liệu.");
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="tool-page">
