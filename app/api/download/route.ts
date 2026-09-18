@@ -3,6 +3,7 @@ import { ytDlp } from "@/lib/ytdlp";
 import { assertPublicHttpUrl } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
 import { detectPlatform } from "@/lib/platforms";
+import { mediaProxyUrl } from "@/lib/signedUrl";
 
 export async function POST(req: NextRequest) {
   if (rateLimited(req, "download")) {
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
       title: data.title || data.fulltitle || "Không có tiêu đề",
       description: data.description || "",
       uploader: data.uploader || data.channel || "",
-      thumbnail: data.thumbnail || "",
+      thumbnail: typeof data.thumbnail === "string" && data.thumbnail.startsWith("http") ? mediaProxyUrl(data.thumbnail) : "",
       duration: data.duration_string || data.duration || 0,
       heights,
       hasAudio,

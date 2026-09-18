@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
 import { assertPublicHttpUrl, safeFetchText } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
+import { mediaProxyUrl } from "@/lib/signedUrl";
 
 // Detect platform from URL
 function detectPlatform(url: string): "shopee" | "tiktok_shop" | "lazada" | "unknown" {
@@ -116,6 +117,10 @@ export async function POST(req: NextRequest) {
       result = await curlFallback(url, "E-Commerce");
     }
 
+    // Product CDNs block hotlinking, so route images through the signed media proxy.
+    result.images = (result.images as string[])
+      .filter((u) => typeof u === "string" && u.startsWith("http"))
+      .map((u) => mediaProxyUrl(u));
     return NextResponse.json(result);
   } catch (error: any) {
     console.error("[API/ecommerce] Error:", error);
