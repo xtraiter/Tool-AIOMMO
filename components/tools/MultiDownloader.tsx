@@ -18,22 +18,23 @@ export function MultiDownloader() {
     setResult(null);
 
     try {
-      // Giả lập gọi API (sử dụng biến môi trường NEXT_PUBLIC_DOWNLOAD_API nếu có)
-      const apiUrl = process.env.NEXT_PUBLIC_DOWNLOAD_API || "";
-      console.log("Fetching from API:", apiUrl);
+      const response = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
 
-      // Timeout giả lập
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const data = await response.json();
 
-      if (url.includes("error")) {
-        throw new Error("Không thể trích xuất dữ liệu từ đường dẫn này.");
+      if (!response.ok) {
+        throw new Error(data.error || "Có lỗi xảy ra khi lấy dữ liệu.");
       }
 
       setResult({
-        type: "video",
-        title: "Video TikTok / Facebook Mẫu",
-        thumbnail: placeholderImage("Video Thumbnail", 400, 225),
-        url: "#",
+        type: data.type || "video",
+        title: data.title || "Video Downloaded",
+        thumbnail: data.thumbnail,
+        url: data.url,
       });
     } catch (err: any) {
       setError(err.message || "Có lỗi xảy ra khi lấy dữ liệu.");
