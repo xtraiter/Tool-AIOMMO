@@ -30,11 +30,7 @@ async function getYtDlpPath(): Promise<string> {
 
 let _ytDlpPath: string | null = null;
 
-/**
- * Runs yt-dlp without a shell. `url` is passed after `--` so it can never be
- * parsed as an option or interpreted by a shell.
- */
-export async function ytDlp(options: string[], url: string): Promise<{ stdout: string; stderr: string }> {
+async function run(options: string[], url: string, timeout: number) {
   if (!_ytDlpPath) {
     _ytDlpPath = await getYtDlpPath();
   }
@@ -43,9 +39,22 @@ export async function ytDlp(options: string[], url: string): Promise<{ stdout: s
   // avoids test-downloading fragments.
   const base = ["--force-ipv4", "--socket-timeout", "20", "--js-runtimes", "node", "--no-check-formats"];
   try {
-    return await execFileAsync(_ytDlpPath, [...base, ...options, "--", url], { timeout: 90000, maxBuffer: 20 * 1024 * 1024 });
+    return await execFileAsync(_ytDlpPath, [...base, ...options, "--", url], { timeout, maxBuffer: 20 * 1024 * 1024 });
   } catch (err: any) {
     const detail = String(err?.stderr || "").split("\n").filter((l) => l.includes("ERROR")).pop();
     throw new Error(detail ? detail.replace(/^ERROR:\s*/, "").slice(0, 200) : "yt-dlp không lấy được dữ liệu từ link này.");
   }
+}
+
+/**
+ * Runs yt-dlp without a shell. `url` is passed after `--` so it can never be
+ * parsed as an option or interpreted by a shell.
+ */
+export function ytDlp(options: string[], url: string) {
+  return run(options, url, 90_000);
+}
+
+/** Same, but with a longer timeout for actually downloading media to disk. */
+export function ytDlpDownload(options: string[], url: string) {
+  return run(options, url, 300_000);
 }

@@ -18,33 +18,30 @@ export async function POST(req: NextRequest) {
     const safe = await assertPublicHttpUrl(url);
     console.log(`[API] Đang trích xuất: ${safe.href}`);
 
-    // Sử dụng yt-dlp để lấy thông tin JSON
-    const { stdout, stderr } = await ytDlp(["--dump-json", "--no-warnings", "--no-playlist"], safe.href);
-
-    if (stderr && stderr.includes("ERROR:")) {
-      console.error("[API] yt-dlp error:", stderr);
-      return NextResponse.json({ error: "Không thể trích xuất dữ liệu từ URL này." }, { status: 500 });
-    }
-
+    const { stdout } = await ytDlp(["--dump-json", "--no-warnings", "--no-playlist"], safe.href);
     const data = JSON.parse(stdout);
 
-    // Bóc tách các trường cần thiết trả về cho Frontend
-    const result = {
+    const formats: any[] = data.formats ?? [];
+    const heights = [
+      ...new Set(
+        formats
+          .filter((f) => f.vcodec && f.vcodec !== "none" && typeof f.height === "number" && f.height >= 144)
+          .map((f) => f.height as number)
+      ),
+    ].sort((a, b) => b - a);
+    const hasAudio = formats.some((f) => f.acodec && f.acodec !== "none");
+
+    return NextResponse.json({
       type: "video",
       title: data.title || data.fulltitle || "Không có tiêu đề",
-      thumbnail: data.thumbnail || "https://via.placeholder.com/400x225?text=No+Thumbnail",
+      description: data.description || "",
+      uploader: data.uploader || data.channel || "",
+      thumbnail: data.thumbnail || "",
       duration: data.duration_string || data.duration || 0,
-      url: data.url || (data.formats && data.formats.length > 0 ? data.formats.slice(-1)[0].url : ""),
-      formats: data.formats?.map((f: any) => ({
-        format_id: f.format_id,
-        ext: f.ext,
-        resolution: f.resolution,
-        url: f.url
-      })),
-      source: data.webpage_url
-    };
-
-    return NextResponse.json(result);
+      heights,
+      hasAudio,
+      source: data.webpage_url || safe.href,
+    });
   } catch (error: any) {
     console.error("[API] Error:", error);
     return NextResponse.json(
