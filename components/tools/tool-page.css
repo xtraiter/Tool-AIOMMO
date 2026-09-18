@@ -316,3 +316,43 @@
 @media (prefers-reduced-motion: reduce) {
   .tool-progress-fill.is-indeterminate { animation: none; width: 100%; opacity: 0.5; }
 }
+
+/* Downloader options: Video/Audio segmented switch + format & quality selects.
+   Everything wraps to the container width, so nothing overflows on phones. */
+.dl-options { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.dl-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.dl-segment button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.dl-segment button.is-active { background: var(--accent); color: var(--button-ink, #1a1200); }
+.dl-segment button:disabled { opacity: 0.4; cursor: not-allowed; }
+.dl-selects { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.dl-selects .tool-field { min-width: 0; }
+.dl-selects select { width: 100%; }
+.dl-submit { width: 100%; justify-content: center; }
+@media (min-width: 640px) {
+  .dl-options { flex-direction: row; align-items: flex-end; flex-wrap: wrap; }
+  .dl-segment { min-width: 220px; }
+  .dl-selects { flex: 1; min-width: 260px; }
+  .dl-submit { width: auto; }
+}

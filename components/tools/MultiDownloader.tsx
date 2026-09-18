@@ -203,47 +203,63 @@ export function MultiDownloader() {
               )}
             </div>
 
-            <div className="tool-row" style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: '16px' }}>
-              <div className="tool-field" style={{ flex: '0 0 auto', minWidth: 'unset' }}>
-                <label>Định dạng</label>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {VIDEO_FORMATS.map(([id, label]) => (
-                    <button key={id} className={format === id ? "tool-btn" : "tool-btn tool-btn-secondary"} style={{ padding: '8px 12px' }} disabled={!info.heights.length} onClick={() => setFormat(id)}>
-                      <Video size={14} /> {label}
-                    </button>
-                  ))}
-                  {AUDIO_FORMATS.map(([id, label]) => (
-                    <button key={id} className={format === id ? "tool-btn" : "tool-btn tool-btn-secondary"} style={{ padding: '8px 12px' }} disabled={!info.hasAudio} onClick={() => setFormat(id)}>
-                      <Music size={14} /> {label}
-                    </button>
-                  ))}
-                </div>
+            <div className="dl-options">
+              <div className="dl-segment" role="tablist" aria-label="Loại tệp">
+                <button
+                  role="tab"
+                  aria-selected={isVideoFormat}
+                  className={isVideoFormat ? "is-active" : ""}
+                  disabled={!info.heights.length}
+                  onClick={() => setFormat("mp4")}
+                >
+                  <Video size={15} /> Video
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={!isVideoFormat}
+                  className={!isVideoFormat ? "is-active" : ""}
+                  disabled={!info.hasAudio}
+                  onClick={() => setFormat("mp3")}
+                >
+                  <Music size={15} /> Âm thanh
+                </button>
               </div>
 
-              {isVideoFormat && info.heights.length > 0 && (
-                <div className="tool-field" style={{ flex: '0 0 auto', minWidth: '140px' }}>
-                  <label>Chất lượng</label>
-                  <select value={height} onChange={(e) => setHeight(Number(e.target.value))}>
-                    {info.heights.map((h) => (
-                      <option key={h} value={h}>{h}p</option>
+              <div className="dl-selects">
+                <div className="tool-field">
+                  <label htmlFor="dl-format">Định dạng</label>
+                  <select id="dl-format" value={format} onChange={(e) => setFormat(e.target.value)}>
+                    {(isVideoFormat ? VIDEO_FORMATS : AUDIO_FORMATS).map(([id, label]) => (
+                      <option key={id} value={id}>{label}</option>
                     ))}
                   </select>
                 </div>
-              )}
 
-              {!isVideoFormat && !isLossless && (
-                <div className="tool-field" style={{ flex: '0 0 auto', minWidth: '140px' }}>
-                  <label>Chất lượng âm thanh</label>
-                  <select value={bitrate} onChange={(e) => setBitrate(Number(e.target.value))}>
-                    {BITRATES.map((b) => (
-                      <option key={b} value={b}>{b} kbps</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+                {isVideoFormat && info.heights.length > 0 && (
+                  <div className="tool-field">
+                    <label htmlFor="dl-height">Chất lượng</label>
+                    <select id="dl-height" value={height} onChange={(e) => setHeight(Number(e.target.value))}>
+                      {info.heights.map((h) => (
+                        <option key={h} value={h}>{h}p</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-              <button className="tool-btn" onClick={handleDownload} disabled={downloading}>
-                <Download size={16} /> {downloading ? "Đang xử lý trên máy chủ..." : `Tải ${format.toUpperCase()}`}
+                {!isVideoFormat && !isLossless && (
+                  <div className="tool-field">
+                    <label htmlFor="dl-bitrate">Chất lượng</label>
+                    <select id="dl-bitrate" value={bitrate} onChange={(e) => setBitrate(Number(e.target.value))}>
+                      {BITRATES.map((b) => (
+                        <option key={b} value={b}>{b} kbps</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <button className="tool-btn dl-submit" onClick={handleDownload} disabled={downloading}>
+                <Download size={16} /> {downloading ? "Đang xử lý..." : `Tải ${format.toUpperCase()}`}
               </button>
             </div>
             {!isVideoFormat && info.maxAbr > 0 && (
