@@ -18,6 +18,10 @@ const LazyVoiceRecorder = dynamic(() => import("@/components/tools/VoiceRecorder
 const LazyScreenRecorder = dynamic(() => import("@/components/tools/ScreenRecorder").then((m) => ({ default: m.ScreenRecorder })), { ssr: false });
 const LazyZipExtractor = dynamic(() => import("@/components/tools/ZipExtractor").then((m) => ({ default: m.ZipExtractor })), { ssr: false });
 const LazyVideoTimeline = dynamic(() => import("@/components/tools/VideoTimeline").then((m) => ({ default: m.VideoTimeline })), { ssr: false });
+const LazyMultiDownloader = dynamic(() => import("@/components/tools/MultiDownloader").then((m) => ({ default: m.MultiDownloader })), { ssr: false });
+const LazyAlbumDownloader = dynamic(() => import("@/components/tools/AlbumDownloader").then((m) => ({ default: m.AlbumDownloader })), { ssr: false });
+const LazyBulkScanner = dynamic(() => import("@/components/tools/BulkScanner").then((m) => ({ default: m.BulkScanner })), { ssr: false });
+const LazyEcommerceInfo = dynamic(() => import("@/components/tools/EcommerceInfo").then((m) => ({ default: m.EcommerceInfo })), { ssr: false });
 
 export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
   const validInitialSlug = initialSlug && DEFAULT_LOCAL_FEATURES.some((f) => f.slug === initialSlug) ? initialSlug : undefined;
@@ -63,10 +67,15 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     const hasTipsMobile = activeSlug === "tips.mobile";
     const hasTipsSocial = activeSlug === "tips.social";
     const hasTipsAiNews = activeSlug === "tips.ai-news";
+    const hasMultiDownloader = activeSlug === "premium.downloader";
+    const hasAlbumDownloader = activeSlug === "premium.album";
+    const hasBulkScanner = activeSlug === "premium.channel.scanner";
+    const hasEcommerceInfo = activeSlug === "premium.product.info";
 
     const showNone = !hasVideoCut && !hasVideoJoin && !hasVideoScreenrecord && !hasAudioCut && !hasAudioExtract
       && !hasAudioVolume && !hasAudioRecord && !hasUtilityZip && !hasVideoTimeline
-      && !hasTipsAll && !hasTipsMobile && !hasTipsSocial && !hasTipsAiNews;
+      && !hasTipsAll && !hasTipsMobile && !hasTipsSocial && !hasTipsAiNews
+      && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo;
 
     if (hasVideoCut) return <LazyVideoCutter />;
     if (hasVideoJoin) return <LazyVideoJoiner />;
@@ -77,6 +86,10 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     if (hasAudioRecord) return <LazyVoiceRecorder />;
     if (hasUtilityZip) return <LazyZipExtractor />;
     if (hasVideoTimeline) return <LazyVideoTimeline />;
+    if (hasMultiDownloader) return <LazyMultiDownloader />;
+    if (hasAlbumDownloader) return <LazyAlbumDownloader />;
+    if (hasBulkScanner) return <LazyBulkScanner />;
+    if (hasEcommerceInfo) return <LazyEcommerceInfo />;
     if (hasTipsAll) return <EmbedPage icon={Layers3} title="Tất Cả Hướng Dẫn" subtitle="Tổng hợp hướng dẫn sử dụng và mẹo hay." />;
     if (hasTipsMobile) return <EmbedPage icon={Smartphone} title="Hướng Dẫn Di Động (iOS & Android)" subtitle="Phím tắt, mẹo pin và thủ thuật thiết bị di động." />;
     if (hasTipsSocial) return <EmbedPage icon={Share2} title="Hướng Dẫn Mạng Xã Hội" subtitle="Bóc tách video, album ảnh Facebook, TikTok, Douyin." />;
