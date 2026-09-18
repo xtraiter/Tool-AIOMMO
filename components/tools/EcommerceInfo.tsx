@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ShoppingBag, AlertCircle, PackageSearch, Image as ImageIcon, Video, Copy } from "lucide-react";
+import { placeholderImage } from "@/lib/placeholderImage";
 import "./tool-page.css";
 
 export function EcommerceInfo() {
@@ -31,9 +32,9 @@ export function EcommerceInfo() {
         price: "150.000đ - 180.000đ",
         description: "Chất liệu cotton 100% thoáng mát.\\nBảo hành 1 đổi 1 trong 7 ngày.\\nPhù hợp mặc đi chơi, đi học.",
         images: [
-          "https://via.placeholder.com/300?text=Product+Img+1",
-          "https://via.placeholder.com/300?text=Product+Img+2",
-          "https://via.placeholder.com/300?text=Product+Img+3"
+          placeholderImage("Ảnh SP 1", 300, 300),
+          placeholderImage("Ảnh SP 2", 300, 300),
+          placeholderImage("Ảnh SP 3", 300, 300)
         ],
         videos: 1
       });

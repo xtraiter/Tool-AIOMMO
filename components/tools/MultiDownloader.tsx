@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Download, Search, AlertCircle, Video, Image as ImageIcon } from "lucide-react";
+import { placeholderImage } from "@/lib/placeholderImage";
 import "./tool-page.css";
 
 export function MultiDownloader() {
@@ -31,7 +32,7 @@ export function MultiDownloader() {
       setResult({
         type: "video",
         title: "Video TikTok / Facebook Mẫu",
-        thumbnail: "https://via.placeholder.com/400x225?text=Video+Thumbnail",
+        thumbnail: placeholderImage("Video Thumbnail", 400, 225),
         url: "#",
       });
     } catch (err: any) {

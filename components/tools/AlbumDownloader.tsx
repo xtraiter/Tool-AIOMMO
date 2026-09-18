@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Search, AlertCircle, ImageIcon, DownloadCloud } from "lucide-react";
+import { placeholderImage } from "@/lib/placeholderImage";
 import "./tool-page.css";
 
 export function AlbumDownloader() {
@@ -27,10 +28,10 @@ export function AlbumDownloader() {
       }
 
       setResult([
-        "https://via.placeholder.com/600x800?text=Image+1",
-        "https://via.placeholder.com/600x800?text=Image+2",
-        "https://via.placeholder.com/600x800?text=Image+3",
-        "https://via.placeholder.com/600x800?text=Image+4",
+        placeholderImage("Ảnh 1", 600, 800),
+        placeholderImage("Ảnh 2", 600, 800),
+        placeholderImage("Ảnh 3", 600, 800),
+        placeholderImage("Ảnh 4", 600, 800),
       ]);
     } catch (err: any) {
       setError(err.message || "Có lỗi xảy ra khi lấy dữ liệu.");
