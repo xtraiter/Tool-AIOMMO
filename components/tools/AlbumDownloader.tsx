@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Search, AlertCircle, ImageIcon, DownloadCloud } from "lucide-react";
 import JSZip from "jszip";
+import { safeFilename } from "@/lib/filename";
+import { ProgressBar } from "./ProgressBar";
 import "./tool-page.css";
 
 type AlbumItem = { url: string; thumbnail: string; title: string; ext: string };
@@ -31,7 +33,7 @@ export function AlbumDownloader() {
       const blob = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${(meta?.title || "album").replace(/[^\w]+/g, "_").slice(0, 40) || "album"}.zip`;
+      a.download = safeFilename(meta?.title || "album", "zip");
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -102,10 +104,16 @@ export function AlbumDownloader() {
           </button>
         </div>
 
+        {loading && <ProgressBar label="Đang bóc tách album..." />}
+
         {error && (
           <div className="tool-status-error" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px' }}>
             <AlertCircle size={16} /> {error}
           </div>
+        )}
+
+        {zipping && (
+          <ProgressBar percent={(zipProgress / Math.max(1, result.length)) * 100} label={`Đang tải và nén ảnh ${Math.min(zipProgress + 1, result.length)}/${result.length}...`} />
         )}
 
         {result.length > 0 && (

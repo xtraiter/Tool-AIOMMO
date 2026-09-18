@@ -4,6 +4,7 @@ import { safeFetch } from "@/lib/safeUrl";
 import { verifyUrl } from "@/lib/signedUrl";
 import { rateLimited } from "@/lib/rateLimit";
 import { detectPlatform } from "@/lib/platforms";
+import { cleanName, contentDisposition } from "@/lib/filename";
 
 export const dynamic = "force-dynamic";
 
@@ -45,8 +46,8 @@ export async function GET(req: NextRequest) {
     const headers: Record<string, string> = { "Content-Type": type, "Cache-Control": "private, max-age=600" };
     if (len) headers["Content-Length"] = String(len);
     if (p.get("dl")) {
-      const name = (p.get("name") || "download").replace(/[^\w.\-]/g, "_").slice(0, 100);
-      headers["Content-Disposition"] = `attachment; filename="${name}"`;
+      const name = cleanName(p.get("name") || "download");
+      headers["Content-Disposition"] = contentDisposition(name);
     }
     return new Response(res.body, { headers });
   } catch (e: any) {

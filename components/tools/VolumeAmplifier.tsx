@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Volume2, UploadCloud, X, Zap } from "lucide-react";
 import { formatBytes, formatDuration, downloadBlob } from "@/lib/ffmpegLoader";
 import { audioBufferToWav, audioBufferToMp3, getAudioContextCtor } from "@/lib/audioEncode";
+import { ProgressBar } from "./ProgressBar";
 import { useBackgroundBusy } from "@/lib/backgroundEffect";
 import "./tool-page.css";
 
@@ -18,6 +19,7 @@ export function VolumeAmplifier() {
   const [busy, setBusy] = useState(false);
   useBackgroundBusy(busy);
   const [status, setStatus] = useState("");
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -48,6 +50,7 @@ export function VolumeAmplifier() {
   async function handleAmplify() {
     if (!buffer) return;
     setBusy(true);
+    setProgress(0);
     setError("");
     try {
       const gain = percent / 100;
@@ -62,7 +65,8 @@ export function VolumeAmplifier() {
       }
 
       setStatus(format === "mp3" ? "Đang mã hoá MP3..." : "Đang xuất WAV...");
-      const blob = format === "mp3" ? await audioBufferToMp3(boosted) : audioBufferToWav(boosted);
+      setProgress(format === "mp3" ? 1 : 50);
+      const blob = format === "mp3" ? await audioBufferToMp3(boosted, 192, setProgress) : audioBufferToWav(boosted);
       downloadBlob(blob, `tang_am_luong_${percent}pc_${file!.name.replace(/\.[^.]+$/, "")}.${format}`);
       setStatus(`Hoàn tất! Đã tăng âm lượng lên ${percent}%.`);
     } catch (err) {
@@ -138,7 +142,8 @@ export function VolumeAmplifier() {
             </>
           )}
 
-          {status && !error && <div className="tool-status-ok">{status}</div>}
+          {busy && <ProgressBar percent={progress} label={status || "Đang xử lý..."} />}
+          {status && !error && !busy && <div className="tool-status-ok">{status}</div>}
           {error && <div className="tool-status-error">{error}</div>}
         </div>
       )}

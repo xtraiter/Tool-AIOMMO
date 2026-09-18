@@ -5,6 +5,7 @@ import { rateLimited } from "@/lib/rateLimit";
 import { detectPlatform } from "@/lib/platforms";
 import { mediaProxyUrl } from "@/lib/signedUrl";
 import { extractTikTokPhotos } from "@/lib/tiktokPhotos";
+import { safeFilename } from "@/lib/filename";
 
 const IMAGE_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic"]);
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
@@ -18,7 +19,7 @@ function extOf(u: string, fallback = "jpg") {
 
 function toItem(src: string, title: string, index: number): Item {
   const ext = extOf(src);
-  const name = `${title.replace(/[^\w]+/g, "_").slice(0, 40) || "image"}_${index + 1}.${ext}`;
+  const name = safeFilename(`${title.slice(0, 60)} ${index + 1}`, ext);
   return { url: mediaProxyUrl(src, name, true), thumbnail: mediaProxyUrl(src), title, ext };
 }
 

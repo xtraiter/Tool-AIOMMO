@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Music, UploadCloud, X, Scissors } from "lucide-react";
 import { formatBytes, formatDuration, downloadBlob } from "@/lib/ffmpegLoader";
 import { audioBufferToWav, audioBufferToMp3, getAudioContextCtor } from "@/lib/audioEncode";
+import { ProgressBar } from "./ProgressBar";
 import { useBackgroundBusy } from "@/lib/backgroundEffect";
 import "./tool-page.css";
 
@@ -17,6 +18,7 @@ export function AudioCutter() {
   const [busy, setBusy] = useState(false);
   useBackgroundBusy(busy);
   const [status, setStatus] = useState("");
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -55,6 +57,7 @@ export function AudioCutter() {
       return;
     }
     setBusy(true);
+    setProgress(0);
     setError("");
     try {
       const ctx = ctxRef.current!;
@@ -68,7 +71,8 @@ export function AudioCutter() {
       }
 
       setStatus(format === "mp3" ? "Đang mã hoá MP3..." : "Đang xuất WAV...");
-      const blob = format === "mp3" ? await audioBufferToMp3(trimmed) : audioBufferToWav(trimmed);
+      setProgress(format === "mp3" ? 1 : 50);
+      const blob = format === "mp3" ? await audioBufferToMp3(trimmed, 192, setProgress) : audioBufferToWav(trimmed);
       downloadBlob(blob, `cat_${file!.name.replace(/\.[^.]+$/, "")}.${format}`);
       setStatus(`Hoàn tất! Đã tải xuống đoạn dài ${formatDuration(end - start)}.`);
     } catch (err) {
@@ -172,7 +176,8 @@ export function AudioCutter() {
             </>
           )}
 
-          {status && !error && <div className="tool-status-ok">{status}</div>}
+          {busy && <ProgressBar percent={progress} label={status || "Đang xử lý..."} />}
+          {status && !error && !busy && <div className="tool-status-ok">{status}</div>}
           {error && <div className="tool-status-error">{error}</div>}
         </div>
       )}

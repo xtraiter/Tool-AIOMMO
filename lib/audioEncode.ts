@@ -66,7 +66,7 @@ function loadLamejs(): Promise<any> {
   return lamejsLoadPromise;
 }
 
-export async function audioBufferToMp3(buffer: AudioBuffer, kbps = 192): Promise<Blob> {
+export async function audioBufferToMp3(buffer: AudioBuffer, kbps = 192, onProgress?: (percent: number) => void): Promise<Blob> {
   const lamejs = await loadLamejs();
   const numChannels = Math.min(2, buffer.numberOfChannels);
   const sampleRate = buffer.sampleRate;
@@ -87,14 +87,21 @@ export async function audioBufferToMp3(buffer: AudioBuffer, kbps = 192): Promise
   const rightI16 = toInt16(right);
 
   const chunks: Int8Array[] = [];
+  let blocks = 0;
   for (let i = 0; i < leftI16.length; i += blockSize) {
     const lc = leftI16.subarray(i, i + blockSize);
     const rc = rightI16.subarray(i, i + blockSize);
     const enc = encoder.encodeBuffer(lc, rc);
     if (enc.length > 0) chunks.push(enc);
+    // Yield regularly so the progress bar can repaint during long encodes.
+    if (++blocks % 200 === 0) {
+      onProgress?.(Math.min(99, Math.round((i / leftI16.length) * 100)));
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
   const end = encoder.flush();
   if (end.length > 0) chunks.push(end);
+  onProgress?.(100);
   return new Blob(chunks as BlobPart[], { type: "audio/mpeg" });
 }
 

@@ -292,3 +292,27 @@
   border-radius: 6px;
 }
 .tool-icon-btn:hover { color: var(--text); background: var(--hover-background); }
+
+/* Shared progress bar (ProgressBar.tsx): label + percent above the track. */
+.tool-progress-wrap { margin-top: 14px; }
+.tool-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.tool-progress-head strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.tool-progress-wrap .tool-progress-track { margin-top: 0; }
+.tool-progress-fill.is-indeterminate {
+  width: 40%;
+  animation: tool-progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes tool-progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-progress-fill.is-indeterminate { animation: none; width: 100%; opacity: 0.5; }
+}

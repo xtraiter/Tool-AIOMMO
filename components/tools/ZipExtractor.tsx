@@ -4,10 +4,11 @@ import { useRef, useState } from "react";
 import JSZip from "jszip";
 import { FolderArchive, UploadCloud, Download, File as FileIcon, X, DownloadCloud } from "lucide-react";
 import { formatBytes, downloadBlob } from "@/lib/ffmpegLoader";
+import { ProgressBar } from "./ProgressBar";
 import { useBackgroundBusy } from "@/lib/backgroundEffect";
 import "./tool-page.css";
 
-type ZipEntry = { name: string; size: number; getBlob: () => Promise<Blob> };
+type ZipEntry = { name: string; size: number; getBlob: (onPercent?: (p: number) => void) => Promise<Blob> };
 
 export function ZipExtractor() {
   const [fileName, setFileName] = useState("");
@@ -16,12 +17,14 @@ export function ZipExtractor() {
   useBackgroundBusy(busy);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  const [progress, setProgress] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(f: File | null) {
     if (!f) return;
     setError("");
     setStatus("Đang đọc tệp ZIP...");
+    setProgress(null);
     setBusy(true);
     try {
       const zip = await JSZip.loadAsync(f);
@@ -31,7 +34,7 @@ export function ZipExtractor() {
         list.push({
           name: relativePath,
           size: (zipEntry as any)._data?.uncompressedSize ?? 0,
-          getBlob: () => zipEntry.async("blob")
+          getBlob: (onPercent?: (p: number) => void) => zipEntry.async("blob", onPercent ? (m) => onPercent(m.percent) : undefined)
         });
       });
       setEntries(list);
@@ -44,17 +47,31 @@ export function ZipExtractor() {
     }
   }
 
-  async function downloadEntry(entry: ZipEntry) {
-    const blob = await entry.getBlob();
+  async function downloadEntry(entry: ZipEntry, onPercent?: (p: number) => void) {
+    const blob = await entry.getBlob(onPercent);
     downloadBlob(blob, entry.name.split("/").pop() || entry.name);
+  }
+
+  async function downloadOne(entry: ZipEntry) {
+    setBusy(true);
+    setProgress(0);
+    setStatus(`Đang giải nén ${entry.name.split("/").pop()}...`);
+    try {
+      await downloadEntry(entry, setProgress);
+      setStatus("Đã tải xuống tệp.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function downloadAll() {
     setBusy(true);
-    setStatus("Đang tải từng tệp...");
-    for (const entry of entries) {
+    setProgress(0);
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      setStatus(`Đang giải nén ${i + 1}/${entries.length}: ${entry.name.split("/").pop()}`);
       // eslint-disable-next-line no-await-in-loop
-      await downloadEntry(entry);
+      await downloadEntry(entry, (p) => setProgress(((i + p / 100) / entries.length) * 100));
       // eslint-disable-next-line no-await-in-loop
       await new Promise((r) => setTimeout(r, 200));
     }
@@ -78,6 +95,7 @@ export function ZipExtractor() {
       </p>
 
       {entries.length === 0 ? (
+        <>
         <div className="tool-dropzone" onClick={() => inputRef.current?.click()}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0] ?? null); }}>
@@ -86,6 +104,8 @@ export function ZipExtractor() {
           <div className="tool-drop-hint">Không hỗ trợ ZIP có mật khẩu</div>
           <input ref={inputRef} type="file" accept=".zip" hidden onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
         </div>
+        {busy && <ProgressBar percent={progress} label={status} />}
+        </>
       ) : (
         <div className="tool-card">
           <div className="tool-file-row">
@@ -106,12 +126,13 @@ export function ZipExtractor() {
                 <FileIcon size={14} style={{ color: "var(--muted)", flexShrink: 0 }} />
                 <span className="tool-clip-name">{entry.name}</span>
                 <span className="tool-file-meta">{formatBytes(entry.size)}</span>
-                <button className="tool-icon-btn" onClick={() => downloadEntry(entry)}><Download size={14} /></button>
+                <button className="tool-icon-btn" onClick={() => downloadOne(entry)} disabled={busy}><Download size={14} /></button>
               </div>
             ))}
           </div>
 
-          {status && !error && <div className="tool-status-ok">{status}</div>}
+          {busy && <ProgressBar percent={progress} label={status} />}
+          {status && !error && !busy && <div className="tool-status-ok">{status}</div>}
           {error && <div className="tool-status-error">{error}</div>}
         </div>
       )}

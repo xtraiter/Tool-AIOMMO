@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ShoppingBag, AlertCircle, PackageSearch, Image as ImageIcon, Video, Copy } from "lucide-react";
 import { placeholderImage } from "@/lib/placeholderImage";
+import { ProgressBar } from "./ProgressBar";
 import "./tool-page.css";
 
 export function EcommerceInfo() {
@@ -63,6 +64,8 @@ export function EcommerceInfo() {
             <PackageSearch size={16} /> {loading ? "Đang xử lý..." : "Lấy thông tin"}
           </button>
         </div>
+
+        {loading && <ProgressBar label="Đang lấy thông tin sản phẩm..." />}
 
         {error && (
           <div className="tool-status-error" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px' }}>

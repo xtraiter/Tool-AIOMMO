@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Download, Search, AlertCircle, Video, Music, Copy, Check } from "lucide-react";
+import { parseContentDisposition } from "@/lib/filename";
+import { ProgressBar } from "./ProgressBar";
 import "./tool-page.css";
 
 const VIDEO_FORMATS = [["mp4", "MP4"], ["mkv", "MKV"]] as const;
@@ -37,6 +39,8 @@ export function MultiDownloader() {
   const [bitrate, setBitrate] = useState(320);
   const [height, setHeight] = useState<number>(0);
   const [downloading, setDownloading] = useState(false);
+  const [dlPercent, setDlPercent] = useState<number | null>(null);
+  const [dlLabel, setDlLabel] = useState("");
   const [copied, setCopied] = useState<"" | "title" | "desc">("");
 
   const handleFetch = async () => {
@@ -68,19 +72,51 @@ export function MultiDownloader() {
   const handleDownload = async () => {
     if (!info) return;
     setDownloading(true);
+    setDlPercent(0);
+    setDlLabel("Đang khởi động...");
     setError("");
     try {
-      const qs = new URLSearchParams({ url: info.source || url.trim(), type: format });
       const isVideo = format === "mp4" || format === "mkv";
-      if (isVideo && height) qs.set("height", String(height));
-      if (!isVideo && format !== "wav" && format !== "flac") qs.set("abr", String(bitrate));
-      const res = await fetch(`/api/download/file?${qs}`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Không thể tải file.");
+      const start = await fetch("/api/download/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: info.source || url.trim(),
+          type: format,
+          ...(isVideo && height ? { height } : {}),
+          ...(!isVideo && format !== "wav" && format !== "flac" ? { abr: bitrate } : {}),
+        }),
+      });
+      const started = await start.json();
+      if (!start.ok) throw new Error(started.error || "Không thể bắt đầu tải.");
+
+      // Phase 1: the server downloads/converts — poll its real percentage (0-90% download, then convert).
+      for (;;) {
+        const st = await (await fetch(`/api/download/status?id=${started.id}`)).json();
+        if (st.error && st.status !== "done") throw new Error(st.error);
+        setDlPercent(Math.round(st.percent * 0.7));
+        setDlLabel(st.stage === "convert" ? "Máy chủ đang chuyển đổi định dạng..." : "Máy chủ đang tải dữ liệu nguồn...");
+        if (st.status === "done") break;
+        await new Promise((r) => setTimeout(r, 600));
       }
-      const blob = await res.blob();
-      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `download.${format}`;
+
+      // Phase 2: transfer the finished file to the browser (70-100%).
+      const res = await fetch(`/api/download/file?id=${started.id}`);
+      if (!res.ok || !res.body) throw new Error("Không thể tải file về máy.");
+      const total = Number(res.headers.get("Content-Length") || 0);
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let got = 0;
+      setDlLabel("Đang tải file về máy...");
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        got += value.length;
+        if (total) setDlPercent(70 + Math.round((got / total) * 30));
+      }
+      const blob = new Blob(chunks as BlobPart[], { type: res.headers.get("Content-Type") || "application/octet-stream" });
+      const name = parseContentDisposition(res.headers.get("Content-Disposition"), `download.${format}`);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = name;
@@ -88,6 +124,7 @@ export function MultiDownloader() {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      setDlPercent(100);
     } catch (err: any) {
       setError(err.message || "Không thể tải file.");
     } finally {
@@ -215,9 +252,7 @@ export function MultiDownloader() {
                 {isLossless ? " WAV/FLAC là định dạng không nén nên file lớn, nhưng không cải thiện âm thanh gốc." : ""}
               </p>
             )}
-            {downloading && (
-              <p className="tool-status-text">Máy chủ đang tải và chuyển đổi file, có thể mất từ vài giây đến vài phút tuỳ độ dài video. Vui lòng không đóng trang.</p>
-            )}
+            {downloading && <ProgressBar percent={dlPercent} label={dlLabel} />}
           </div>
         )}
       </div>

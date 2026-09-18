@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Radar, AlertCircle, PlaySquare, ListPlus } from "lucide-react";
+import { ProgressBar } from "./ProgressBar";
 import "./tool-page.css";
 
 export function BulkScanner() {
@@ -9,6 +10,7 @@ export function BulkScanner() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any[]>([]);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const handleFetch = async () => {
     if (!urls.trim()) return;
@@ -17,27 +19,39 @@ export function BulkScanner() {
     setResult([]);
 
     try {
-      const res = await fetch("/api/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls: urls.trim() }),
-      });
+      const links = urls.split("\n").map((u) => u.trim()).filter((u) => u.startsWith("http")).slice(0, 20);
+      if (links.length === 0) throw new Error("Không tìm thấy URL hợp lệ. Mỗi link nằm trên 1 dòng riêng.");
 
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Không thể quét danh sách này.");
+      const items: any[] = [];
+      const failures: string[] = [];
+      setProgress({ done: 0, total: links.length });
+      for (let i = 0; i < links.length; i++) {
+        try {
+          const res = await fetch("/api/bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ urls: links[i] }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) throw new Error(data.error || "Không thể quét link này.");
+          if (data.errors?.length) failures.push(...data.errors);
+          items.push(...(data.items || []));
+        } catch (e: any) {
+          failures.push(`${links[i]}: ${e.message}`);
+        }
+        setProgress({ done: i + 1, total: links.length });
       }
 
-      if (!data.items || data.items.length === 0) {
-        throw new Error("Không tìm thấy video nào trong link này.");
+      if (items.length === 0) {
+        throw new Error(failures[0] || "Không tìm thấy video nào trong link này.");
       }
-
-      setResult(data.items); // items: [{ id, title, duration, thumbnail, url, ext }]
+      setResult(items);
+      if (failures.length) setError(`Có ${failures.length}/${links.length} link không quét được.`);
     } catch (err: any) {
       setError(err.message || "Có lỗi xảy ra khi quét dữ liệu.");
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -65,6 +79,10 @@ export function BulkScanner() {
             <Radar size={16} /> {loading ? "Đang quét dữ liệu..." : "Quét danh sách"}
           </button>
         </div>
+
+        {loading && progress && (
+          <ProgressBar percent={(progress.done / progress.total) * 100} label={`Đang quét link ${Math.min(progress.done + 1, progress.total)}/${progress.total}...`} />
+        )}
 
         {error && (
           <div className="tool-status-error" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px' }}>
