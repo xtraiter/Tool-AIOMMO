@@ -3,5 +3,6 @@ description: Bối cảnh dự án (Project Context)
 ---
 
 # Bối cảnh dự án Tool AIOMMO
-- Mã nguồn hiện tại trong thư mục `web_toolAIOMMO` được lấy từ máy dev, đẩy lên GitHub tại repository [xtraiter/Tool-AIOMMO](https://github.com/xtraiter/Tool-AIOMMO) và pull về máy chủ online này.
-- Bất kỳ thay đổi nào trên server này cần lưu ý tính đồng bộ với repository trên GitHub.
+- Repository [xtraiter/Tool-AIOMMO](https://github.com/xtraiter/Tool-AIOMMO) trên GitHub là nguồn chân lý duy nhất (single source of truth) cho dự án này.
+- Có nhiều máy cùng làm việc trên repo này (máy dev cá nhân, máy chủ nội bộ chạy agent...) — mỗi máy đều có thể push/pull theo cả 2 chiều, không có máy nào cố định là "nguồn" hay "đích".
+- Trước khi bắt đầu sửa code trên bất kỳ máy nào: `git pull` trước để lấy thay đổi mới nhất từ các máy khác. Sau khi xong việc: commit rõ ràng rồi `git push` ngay để máy khác đồng bộ được.
