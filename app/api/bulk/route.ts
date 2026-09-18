@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { ytDlp } from "@/lib/ytdlp";
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,8 +28,7 @@ export async function POST(req: NextRequest) {
     for (const url of urlList) {
       try {
         // --flat-playlist: chỉ lấy danh sách, không tải file
-        const command = `yt-dlp --dump-json --no-warnings --flat-playlist "${url}"`;
-        const { stdout, stderr } = await execAsync(command, { timeout: 60000 });
+        const { stdout, stderr } = await ytDlp(`--dump-json --no-warnings --flat-playlist "${url}"`);
 
         if (!stdout) continue;
 

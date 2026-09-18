@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { ytDlp } from "@/lib/ytdlp";
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,9 +13,7 @@ export async function POST(req: NextRequest) {
     console.log(`[API] Đang trích xuất: ${url}`);
 
     // Sử dụng yt-dlp để lấy thông tin JSON
-    const command = `yt-dlp --dump-json --no-warnings --no-playlist "${url}"`;
-    
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await ytDlp(`--dump-json --no-warnings --no-playlist "${url}"`);
 
     if (stderr && stderr.includes("ERROR:")) {
       console.error("[API] yt-dlp error:", stderr);

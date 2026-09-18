@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { ytDlp } from "@/lib/ytdlp";
 
 const execAsync = promisify(exec);
 
@@ -55,8 +56,7 @@ async function scrapeShopee(url: string) {
 async function scrapeTikTokShop(url: string) {
   // Use yt-dlp for TikTok product pages — may not work perfectly but tries
   try {
-    const command = `yt-dlp --dump-json --no-warnings "${url}"`;
-    const { stdout } = await execAsync(command, { timeout: 30000 });
+    const { stdout } = await ytDlp(`--dump-json --no-warnings "${url}"`);
     const data = JSON.parse(stdout.trim());
 
     return {

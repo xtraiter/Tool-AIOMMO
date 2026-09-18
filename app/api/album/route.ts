@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { ytDlp } from "@/lib/ytdlp";
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,9 +13,7 @@ export async function POST(req: NextRequest) {
     console.log(`[API/album] Đang trích xuất album: ${url}`);
 
     // yt-dlp dump-json với playlist để lấy từng ảnh/video trong bài viết
-    const command = `yt-dlp --dump-json --no-warnings --flat-playlist "${url}"`;
-
-    const { stdout, stderr } = await execAsync(command, { timeout: 30000 });
+    const { stdout, stderr } = await ytDlp(`--dump-json --no-warnings --flat-playlist "${url}"`);
 
     if (!stdout || (stderr && stderr.includes("ERROR:"))) {
       return NextResponse.json({ error: "Không thể trích xuất album từ URL này. Hãy thử link khác." }, { status: 500 });
@@ -49,8 +44,7 @@ export async function POST(req: NextRequest) {
 
     if (items.length === 0) {
       // Thử lấy thông tin tổng quát (không phải playlist)
-      const singleCmd = `yt-dlp --dump-json --no-warnings "${url}"`;
-      const { stdout: singleOut } = await execAsync(singleCmd, { timeout: 30000 });
+      const { stdout: singleOut } = await ytDlp(`--dump-json --no-warnings "${url}"`);
       const data = JSON.parse(singleOut.trim());
 
       if (data.thumbnail) {
