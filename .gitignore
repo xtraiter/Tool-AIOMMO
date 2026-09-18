@@ -36,3 +36,6 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# onnxruntime-web runtime copied by scripts/copy-ort.js
+public/ort/

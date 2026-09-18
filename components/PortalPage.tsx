@@ -18,6 +18,7 @@ const LazyVoiceRecorder = dynamic(() => import("@/components/tools/VoiceRecorder
 const LazyScreenRecorder = dynamic(() => import("@/components/tools/ScreenRecorder").then((m) => ({ default: m.ScreenRecorder })), { ssr: false });
 const LazyZipExtractor = dynamic(() => import("@/components/tools/ZipExtractor").then((m) => ({ default: m.ZipExtractor })), { ssr: false });
 const LazyVideoTimeline = dynamic(() => import("@/components/tools/VideoTimeline").then((m) => ({ default: m.VideoTimeline })), { ssr: false });
+const LazyVocalSeparator = dynamic(() => import("@/components/tools/VocalSeparator").then((m) => ({ default: m.VocalSeparator })), { ssr: false });
 const LazyMultiDownloader = dynamic(() => import("@/components/tools/MultiDownloader").then((m) => ({ default: m.MultiDownloader })), { ssr: false });
 const LazyAlbumDownloader = dynamic(() => import("@/components/tools/AlbumDownloader").then((m) => ({ default: m.AlbumDownloader })), { ssr: false });
 const LazyBulkScanner = dynamic(() => import("@/components/tools/BulkScanner").then((m) => ({ default: m.BulkScanner })), { ssr: false });
@@ -67,6 +68,7 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     const hasTipsMobile = activeSlug === "tips.mobile";
     const hasTipsSocial = activeSlug === "tips.social";
     const hasTipsAiNews = activeSlug === "tips.ai-news";
+    const hasVocalSeparator = activeSlug === "premium.vocal.separator";
     const hasMultiDownloader = activeSlug === "premium.downloader";
     const hasAlbumDownloader = activeSlug === "premium.album";
     const hasBulkScanner = activeSlug === "premium.channel.scanner";
@@ -75,7 +77,7 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     const showNone = !hasVideoCut && !hasVideoJoin && !hasVideoScreenrecord && !hasAudioCut && !hasAudioExtract
       && !hasAudioVolume && !hasAudioRecord && !hasUtilityZip && !hasVideoTimeline
       && !hasTipsAll && !hasTipsMobile && !hasTipsSocial && !hasTipsAiNews
-      && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo;
+      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo;
 
     if (hasVideoCut) return <LazyVideoCutter />;
     if (hasVideoJoin) return <LazyVideoJoiner />;
@@ -86,6 +88,7 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     if (hasAudioRecord) return <LazyVoiceRecorder />;
     if (hasUtilityZip) return <LazyZipExtractor />;
     if (hasVideoTimeline) return <LazyVideoTimeline />;
+    if (hasVocalSeparator) return <LazyVocalSeparator />;
     if (hasMultiDownloader) return <LazyMultiDownloader />;
     if (hasAlbumDownloader) return <LazyAlbumDownloader />;
     if (hasBulkScanner) return <LazyBulkScanner />;

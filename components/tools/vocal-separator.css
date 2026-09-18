@@ -1,0 +1,96 @@
+/* AI vocal separator: tier picker, per-tier panels, steps and results */
+.vs-page { max-width: 900px; }
+.vs-device { margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); font-size: 13px; }
+.vs-device p { margin: 8px 0 0; display: flex; gap: 6px; align-items: flex-start; color: var(--muted); line-height: 1.5; }
+.vs-device p svg { flex-shrink: 0; margin-top: 2px; color: var(--ok); }
+.vs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.vs-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); font-size: 12px; font-weight: 600; color: var(--muted); }
+.vs-chip.is-ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+
+.vs-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.vs-tier {
+  --tier: var(--accent);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  padding: 14px; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+.vs-tier--light { --tier: #2fa37a; }
+.vs-tier--balanced { --tier: var(--accent); }
+.vs-tier--high { --tier: #8b5cf6; }
+.vs-tier:hover:not(:disabled) { border-color: var(--tier); transform: translateY(-1px); }
+.vs-tier:disabled { opacity: 0.6; cursor: not-allowed; }
+.vs-tier.is-active { border-color: var(--tier); background: color-mix(in srgb, var(--tier) 10%, var(--panel)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tier) 18%, transparent); }
+.vs-tier-icon { display: inline-flex; padding: 8px; border-radius: 10px; color: var(--tier); background: color-mix(in srgb, var(--tier) 14%, transparent); margin-bottom: 4px; }
+.vs-tier-name { font-size: 16px; font-weight: 800; }
+.vs-tier-meta { font-size: 12.5px; color: var(--muted); }
+.vs-tier-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; min-height: 20px; }
+.vs-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.vs-badge--rec { background: var(--tier); color: #fff; }
+.vs-badge--ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.vs-badge--warn { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+
+.vs-panel {
+  --tier: var(--accent);
+  margin-top: 14px; padding: 16px 18px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--tier) 35%, var(--line));
+  border-left: 4px solid var(--tier);
+  background: color-mix(in srgb, var(--tier) 5%, var(--panel));
+}
+.vs-panel--light { --tier: #2fa37a; }
+.vs-panel--balanced { --tier: var(--accent); }
+.vs-panel--high { --tier: #8b5cf6; }
+.vs-panel h2 { font-size: 15.5px; margin: 0 0 4px; }
+.vs-panel > p { margin: 0 0 12px; color: var(--muted); font-size: 13.5px; }
+.vs-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 18px; margin: 0; font-size: 13px; }
+.vs-facts dt { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.vs-facts dd { margin: 1px 0 0; font-weight: 600; }
+.vs-hint, .vs-warn { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0; font-size: 13px; line-height: 1.5; }
+.vs-hint { color: var(--muted); }
+.vs-warn { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); padding: 10px 12px; border-radius: 10px; }
+.vs-hint svg, .vs-warn svg { flex-shrink: 0; margin-top: 2px; }
+.vs-toggle { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13.5px; cursor: pointer; }
+.vs-toggle input { accent-color: var(--tier); width: 16px; height: 16px; }
+
+.vs-page .tool-dropzone, .vs-page .tool-card { margin-top: 16px; }
+.vs-steps { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; margin: 14px 0 0; padding: 0; counter-reset: vs; font-size: 12.5px; color: var(--muted); }
+.vs-steps li { counter-increment: vs; display: flex; align-items: center; gap: 6px; }
+.vs-steps li::before { content: counter(vs); display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line); font-size: 11px; font-weight: 700; }
+.vs-steps li.is-active { color: var(--text); font-weight: 700; }
+.vs-steps li.is-active::before { background: var(--accent); border-color: var(--accent); color: var(--button-ink, #1a1200); }
+.vs-steps li.is-done::before { content: "\2713"; background: var(--ok); border-color: var(--ok); color: #fff; }
+
+.vs-results-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+.vs-results-head h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; margin: 0; flex: 1 1 auto; white-space: nowrap; color: var(--ok); }
+.vs-backend { font-size: 12px; color: var(--muted); }
+.vs-stems { display: grid; gap: 12px; margin-top: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.vs-stem { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); display: flex; flex-direction: column; gap: 10px; }
+.vs-stem--vocals { border-top: 3px solid #ef6a8a; }
+.vs-stem--beat { border-top: 3px solid var(--accent); }
+.vs-stem--drums { border-top: 3px solid #e59a3b; }
+.vs-stem--bass { border-top: 3px solid #3b82e5; }
+.vs-stem--other { border-top: 3px solid #2fa37a; }
+.vs-stem-head { display: flex; align-items: center; gap: 8px; }
+.vs-stem audio { width: 100%; height: 36px; }
+.vs-stem-actions { display: flex; gap: 8px; }
+.vs-stem-actions .tool-btn { padding: 7px 14px; font-size: 12.5px; }
+
+.vs-license { margin-top: 20px; font-size: 12.5px; color: var(--muted); }
+.vs-license summary { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.vs-license p { line-height: 1.6; margin: 8px 0 10px; }
+
+@media (max-width: 560px) {
+  .vs-tier {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "icon name" "icon meta" "icon badges";
+    column-gap: 12px;
+    row-gap: 2px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .vs-tier-icon { grid-area: icon; margin: 0; }
+  .vs-tier-name { grid-area: name; }
+  .vs-tier-meta { grid-area: meta; }
+  .vs-tier-badges { grid-area: badges; min-height: 0; margin-top: 2px; }
+}

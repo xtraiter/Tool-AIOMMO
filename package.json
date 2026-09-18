@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "desktop": "electron main.js"
+    "desktop": "electron main.js",
+    "postinstall": "node scripts/copy-ort.js"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",
@@ -15,10 +16,12 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "clsx": "^2.1.1",
+    "demucs-web": "^1.0.2",
     "jszip": "^3.10.1",
     "lamejs": "^1.2.1",
     "lucide-react": "^0.561.0",
     "next": "^16.0.10",
+    "onnxruntime-web": "^1.30.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
   },

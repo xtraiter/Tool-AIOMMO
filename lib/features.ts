@@ -172,9 +172,9 @@ const AUDIO_FEATURES: AppFeature[] = [
   {
     slug: "premium.vocal.separator",
     name: "AI Tách Lời & Beat Karaoke",
-    description: "Bóc tách giọng hát và nhạc nền beat karaoke độc lập bằng AI công nghệ cao.",
+    description: "Tách giọng hát và beat karaoke bằng AI ngay trên trình duyệt, chọn mức Nhẹ / Cân bằng / Cao cấp theo cấu hình máy.",
     category: "audio",
-    route_path: PREMIUM_URL,
+    route_path: "/audio/vocal",
     icon_name: "waves",
     sort_order: 30,
     is_admin_only: false,
