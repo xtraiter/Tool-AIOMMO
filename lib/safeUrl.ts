@@ -46,18 +46,28 @@ export async function assertPublicHttpUrl(raw: string): Promise<URL> {
   return u;
 }
 
-/** GET a page as text, validating every redirect hop against the public-IP rule. */
-export async function safeFetchText(raw: string, headers: Record<string, string> = {}, timeoutMs = 20000): Promise<string> {
+/** GET with manual redirects, validating every hop. Returns the final Response and URL. */
+export async function safeFetch(raw: string, headers: Record<string, string> = {}, timeoutMs = 20000): Promise<{ res: Response; url: string }> {
   let current = raw;
   for (let hop = 0; hop < 5; hop++) {
     const u = await assertPublicHttpUrl(current);
     const res = await fetch(u, { headers, redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
     if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+      await res.body?.cancel();
       current = new URL(res.headers.get("location")!, u).toString();
       continue;
     }
-    const text = await res.text();
-    return text.slice(0, 2_000_000);
+    return { res, url: u.toString() };
   }
   throw new Error("Quá nhiều lần chuyển hướng.");
+}
+
+/** GET a page as text (capped at 2MB), returning the final URL after redirects. */
+export async function safeFetchPage(raw: string, headers: Record<string, string> = {}, timeoutMs = 20000): Promise<{ text: string; url: string }> {
+  const { res, url } = await safeFetch(raw, headers, timeoutMs);
+  return { text: (await res.text()).slice(0, 2_000_000), url };
+}
+
+export async function safeFetchText(raw: string, headers: Record<string, string> = {}, timeoutMs = 20000): Promise<string> {
+  return (await safeFetchPage(raw, headers, timeoutMs)).text;
 }

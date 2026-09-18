@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
 import { assertPublicHttpUrl } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
+import { detectPlatform } from "@/lib/platforms";
 
 export async function POST(req: NextRequest) {
   if (rateLimited(req, "download")) {
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       type: "video",
+      platform: detectPlatform(safe.href).name,
       title: data.title || data.fulltitle || "Không có tiêu đề",
       description: data.description || "",
       uploader: data.uploader || data.channel || "",

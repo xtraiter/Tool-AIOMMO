@@ -1,84 +1,87 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ytDlp } from "@/lib/ytdlp";
-import { assertPublicHttpUrl } from "@/lib/safeUrl";
+import { assertPublicHttpUrl, safeFetchPage } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
+import { detectPlatform } from "@/lib/platforms";
+import { mediaProxyUrl } from "@/lib/signedUrl";
+import { extractTikTokPhotos } from "@/lib/tiktokPhotos";
+
+const IMAGE_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic"]);
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+
+type Item = { url: string; thumbnail: string; title: string; ext: string };
+
+function extOf(u: string, fallback = "jpg") {
+  const m = /\.(jpe?g|png|webp|gif|heic)(?:\?|$)/i.exec(u);
+  return (m ? m[1] : fallback).toLowerCase().replace("jpeg", "jpg");
+}
+
+function toItem(src: string, title: string, index: number): Item {
+  const ext = extOf(src);
+  const name = `${title.replace(/[^\w]+/g, "_").slice(0, 40) || "image"}_${index + 1}.${ext}`;
+  return { url: mediaProxyUrl(src, name, true), thumbnail: mediaProxyUrl(src), title, ext };
+}
 
 export async function POST(req: NextRequest) {
   if (rateLimited(req, "album")) {
     return NextResponse.json({ error: "Bạn thao tác quá nhanh, vui lòng thử lại sau." }, { status: 429 });
   }
   try {
-    const body = await req.json();
-    const { url } = body;
-
+    const { url } = await req.json();
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Vui lòng cung cấp URL hợp lệ." }, { status: 400 });
     }
 
-    const safe = await assertPublicHttpUrl(url);
-    console.log(`[API/album] Đang trích xuất album: ${safe.href}`);
+    let safe = await assertPublicHttpUrl(url);
+    let platform = detectPlatform(safe.href);
+    console.log(`[API/album] ${platform.name}: ${safe.href}`);
 
-    // yt-dlp dump-json với playlist để lấy từng ảnh/video trong bài viết
-    const { stdout, stderr } = await ytDlp(["--dump-json", "--no-warnings", "--flat-playlist"], safe.href);
-
-    if (!stdout || (stderr && stderr.includes("ERROR:"))) {
-      return NextResponse.json({ error: "Không thể trích xuất album từ URL này. Hãy thử link khác." }, { status: 500 });
-    }
-
-    // yt-dlp có thể trả về nhiều dòng JSON (mỗi dòng là 1 media item)
-    const lines = stdout.trim().split("\n").filter(Boolean);
-    
-    const items: { url: string; thumbnail: string; title: string; ext: string }[] = [];
-
-    for (const line of lines) {
+    // TikTok photo posts: yt-dlp does not support them, so read the page data directly.
+    if (platform.id === "tiktok") {
       try {
-        const data = JSON.parse(line);
-        // Ưu tiên thumbnail làm URL ảnh nếu là album ảnh
-        const mediaUrl = data.url || data.webpage_url || "";
-        const thumbnail = data.thumbnail || "";
-
-        items.push({
-          url: mediaUrl,
-          thumbnail: thumbnail || mediaUrl,
-          title: data.title || `Media ${items.length + 1}`,
-          ext: data.ext || "jpg",
-        });
-      } catch {
-        // bỏ qua dòng lỗi
-      }
-    }
-
-    if (items.length === 0) {
-      // Thử lấy thông tin tổng quát (không phải playlist)
-      const { stdout: singleOut } = await ytDlp(["--dump-json", "--no-warnings"], safe.href);
-      const data = JSON.parse(singleOut.trim());
-
-      if (data.thumbnail) {
-        items.push({
-          url: data.thumbnail,
-          thumbnail: data.thumbnail,
-          title: data.title || "Ảnh",
-          ext: "jpg",
-        });
-      }
-
-      // Nếu có subtitles hoặc formats là ảnh, cũng thêm vào
-      if (data.formats) {
-        const imageFormats = data.formats.filter((f: any) => f.ext === "jpg" || f.ext === "png" || f.ext === "webp");
-        for (const f of imageFormats) {
-          if (f.url) {
-            items.push({ url: f.url, thumbnail: f.url, title: data.title || "Ảnh", ext: f.ext });
-          }
+        const page = await safeFetchPage(safe.href, { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" });
+        const photos = extractTikTokPhotos(page.text);
+        if (photos) {
+          return NextResponse.json({
+            platform: platform.name,
+            title: photos.title,
+            items: photos.images.map((src, i) => toItem(src, photos.title, i)),
+          });
         }
-      }
+        safe = await assertPublicHttpUrl(page.url); // resolved short link (vt./vm.tiktok.com)
+      } catch { /* fall through to yt-dlp */ }
     }
 
-    return NextResponse.json({ items });
+    const { stdout } = await ytDlp(["--dump-single-json", "--no-warnings", "--flat-playlist"], safe.href);
+    const data = JSON.parse(stdout);
+    const entries: any[] = Array.isArray(data.entries) && data.entries.length ? data.entries : [data];
+    const title: string = data.title || "Album";
+
+    const images: string[] = [];
+    for (const e of entries) {
+      const direct = typeof e.url === "string" && IMAGE_EXT.has(String(e.ext || "").toLowerCase()) ? e.url : "";
+      const bestThumb = Array.isArray(e.thumbnails) && e.thumbnails.length
+        ? [...e.thumbnails].sort((a, b) => (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0))[0]?.url
+        : "";
+      const isImageEntry = direct || (!e.formats?.some((f: any) => f.vcodec && f.vcodec !== "none") && !e.duration);
+      const src = direct || (isImageEntry ? e.thumbnail || bestThumb : "");
+      if (src && !images.includes(src)) images.push(src);
+    }
+
+    if (images.length === 0) {
+      return NextResponse.json(
+        { error: "Không tìm thấy ảnh nào. Nếu link này là video, hãy dùng công cụ \"Tải Video\"." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      platform: platform.name,
+      title,
+      items: images.map((src, i) => toItem(src, title, i)),
+    });
   } catch (error: any) {
     console.error("[API/album] Error:", error);
-    return NextResponse.json(
-      { error: "Đã xảy ra lỗi: " + (error.message || "Unknown error") },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Đã xảy ra lỗi: " + (error.message || "Unknown error") }, { status: 500 });
   }
 }

@@ -5,6 +5,7 @@ import { Download, Search, AlertCircle, Video, Music, Copy, Check } from "lucide
 import "./tool-page.css";
 
 type VideoInfo = {
+  platform?: string;
   title: string;
   description: string;
   uploader: string;
@@ -136,7 +137,7 @@ export function MultiDownloader() {
                   </button>
                 </div>
                 <span style={{ fontSize: '13px', color: 'var(--muted)' }}>
-                  {[info.uploader, info.duration ? formatDuration(info.duration) : ""].filter(Boolean).join(" · ")}
+                  {[info.platform, info.uploader, info.duration ? formatDuration(info.duration) : ""].filter(Boolean).join(" · ")}
                 </span>
               </div>
             </div>

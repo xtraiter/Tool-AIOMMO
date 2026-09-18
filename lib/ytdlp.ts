@@ -38,6 +38,8 @@ async function run(options: string[], url: string, timeout: number) {
   // runtime lets yt-dlp solve YouTube's JS challenges; skipping format checks
   // avoids test-downloading fragments.
   const base = ["--force-ipv4", "--socket-timeout", "20", "--js-runtimes", "node", "--no-check-formats"];
+  // Optional Netscape cookies file — Douyin, Facebook and Instagram often need one.
+  if (process.env.YTDLP_COOKIES_FILE) base.push("--cookies", process.env.YTDLP_COOKIES_FILE);
   try {
     return await execFileAsync(_ytDlpPath, [...base, ...options, "--", url], { timeout, maxBuffer: 20 * 1024 * 1024 });
   } catch (err: any) {
