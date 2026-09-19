@@ -1,1427 +1,644 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Layers3, UploadCloud, Music, Type, Plus, X, Play, Pause,
-  ZoomIn, ZoomOut, Film, Download, Image as ImageIcon, Eye, EyeOff,
-  GripVertical, Monitor
+  Layers3, Play, Pause, SkipBack, Undo2, Redo2, ZoomIn, ZoomOut, Plus, Type, Music, Scissors, Trash2, Copy,
+  Volume2, SlidersHorizontal, Pencil, Clock, RectangleHorizontal, Download, X, UploadCloud,
 } from "lucide-react";
-import { fetchFile } from "@ffmpeg/util";
-import { loadSharedFfmpeg, formatBytes, formatDuration, downloadBlob } from "@/lib/ffmpegLoader";
+import { downloadBlob } from "@/lib/ffmpegLoader";
+import { terminateSharedFfmpeg } from "@/lib/ffmpegLoader";
 import { useBackgroundBusy } from "@/lib/backgroundEffect";
+import { useTr } from "@/lib/i18n";
+import { fmtTime, clamp } from "@/lib/timeFormat";
+import { safeFilename } from "@/lib/filename";
+import { ProgressBar } from "./ProgressBar";
+import { TimelineView, type TimelineApi, type TimelineHandle } from "./timeline/TimelineView";
+import { MediaPool } from "./timeline/pool";
+import { clipBox, drawFrame } from "./timeline/render";
+import { exportProject } from "./timeline/exporter";
+import { addFilmstrip, importFile, mediaKind } from "./timeline/importMedia";
+import {
+  DEFAULT_IMAGE_DUR, DEFAULT_TEXT_DUR, DEFAULT_TEXT_STYLE, RATIOS, addClip, canvasSize, clipAt, duplicateClip, end, hasAudio, makeClip,
+  moveFree, projectDuration, removeClip, reorderMain, setDuration, setSpeed, splitClip, trimLeft, trimRight, updateClip,
+  type Clip, type Media, type Project, type RatioId, type TextStyle,
+} from "./timeline/model";
 import "./tool-page.css";
-import "./video-timeline.css";
+import "./video-editor.css";
 
-type LayerType = "video" | "image" | "audio" | "text";
+type Panel = "audio" | "look" | "text" | "duration" | "ratio" | "export";
 
-// A file imported once, reusable across any number of timeline clips (CapCut-style media bin).
-type MediaItem = {
-  id: string;
-  kind: "video" | "image" | "audio";
-  name: string;
-  file: File;
-  objectUrl: string;
-  sourceDuration?: number; // video/audio
-};
+const SWATCHES = ["#ffffff", "#000000", "#ffeb3b", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6", "#3b82f6", "#22c55e"];
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
 
-// One placed instance on the timeline. Multiple clips can reference the same MediaItem.
-type Clip = {
-  id: string;
-  mediaId?: string; // video/image/audio clips only
-  type: LayerType;
-  name: string;
-  start: number; // project-time seconds
-  duration: number;
-  trimIn?: number; // video/audio only
-  trimOut?: number; // video/audio only
-  x: number; // 0..1, relative center (video/image/text)
-  y: number; // 0..1
-  scale: number; // video/image, 1 = contain-fit baseline
-  opacity: number; // 0..1, video/image/text
-  volume: number; // 0..150, video/audio
-  text?: string;
-  color?: string;
-  // Text styling — field names/shape mirror the company's own text caption
-  // editor (AIO_MMO's VideoShortStickman "Tạo video tự động" tool), adapted
-  // to our % font-size scale since our canvas size is user-chosen.
-  fontFamily?: string;
-  fontSize?: number; // % of canvas height
-  bold?: boolean;
-  italic?: boolean;
-  strokeColor?: string; // undefined = no outline
-  strokeWidth?: number; // px
-  bgColor?: string; // undefined = no background box, e.g. "rgba(0,0,0,0.6)"
-  shadowColor?: string; // undefined = no drop shadow
-};
-
-// A track holds an ordered, non-overlapping run of clips. Track array order = z-order
-// (index 0 = back, last = front) for visual layers; audio tracks just contribute to the mix.
-type Track = {
-  id: string;
-  visible: boolean;
-  clips: Clip[];
-};
-
-const TEXT_FONT_FAMILIES = ["Inter", "Arial", "Roboto", "Times New Roman", "Courier New", "Georgia", "Comic Sans MS"];
-
-const TEXT_STYLE_PRESETS: { label: string; patch: Partial<Clip> }[] = [
-  { label: "Mặc định", patch: { color: "#ffffff", strokeColor: undefined, bgColor: undefined, shadowColor: undefined } },
-  { label: "Outline Đen", patch: { color: "#ffffff", strokeColor: "#000000", strokeWidth: 6, bgColor: undefined, shadowColor: undefined } },
-  { label: "Outline Vàng", patch: { color: "#ffeb3b", strokeColor: "#000000", strokeWidth: 6, bgColor: undefined, shadowColor: undefined } },
-  { label: "Hộp Đen", patch: { color: "#ffffff", strokeColor: undefined, bgColor: "rgba(0,0,0,0.6)", shadowColor: undefined } },
-  { label: "Hộp Vàng", patch: { color: "#000000", strokeColor: undefined, bgColor: "#ffeb3b", shadowColor: undefined } },
-  { label: "Đổ Bóng", patch: { color: "#ffffff", strokeColor: undefined, bgColor: undefined, shadowColor: "rgba(0,0,0,0.8)" } }
-];
-
-const MIN_LEN = 0.3;
-const DEFAULT_IMAGE_DURATION = 3;
-const DEFAULT_TEXT_DURATION = 3;
-const SNAP_PX = 8;
-
-const LAYER_META: Record<LayerType, { label: string; icon: any; color: string }> = {
-  video: { label: "Video", icon: Film, color: "#ec4899" },
-  image: { label: "Ảnh", icon: ImageIcon, color: "#f59e0b" },
-  audio: { label: "Âm thanh", icon: Music, color: "#22c55e" },
-  text: { label: "Chữ", icon: Type, color: "#a78bfa" }
-};
-
-const ASPECT_RATIOS = [
-  { id: "16:9", rw: 16, rh: 9, label: "Ngang 16:9", sub: "YouTube, TV" },
-  { id: "9:16", rw: 9, rh: 16, label: "Dọc 9:16", sub: "Shorts, Reels, TikTok" },
-  { id: "1:1", rw: 1, rh: 1, label: "Vuông 1:1", sub: "Instagram bài đăng" },
-  { id: "4:5", rw: 4, rh: 5, label: "Dọc 4:5", sub: "Instagram feed" },
-  { id: "4:3", rw: 4, rh: 3, label: "Ngang 4:3", sub: "Cổ điển" },
-  { id: "3:4", rw: 3, rh: 4, label: "Dọc 3:4", sub: "Cổ điển" }
-];
-
-const RESOLUTIONS = [
-  { id: "1080p", label: "Full HD", sub: "1080p · khuyên dùng", long: 1920 },
-  { id: "720p", label: "HD", sub: "720p · nhẹ, xuất nhanh", long: 1280 }
-];
-
-function computeDims(rw: number, rh: number, longEdge: number) {
-  if (rw >= rh) {
-    const w = longEdge;
-    const h = Math.round((longEdge * rh) / rw);
-    return { w, h };
-  }
-  const h = longEdge;
-  const w = Math.round((longEdge * rw) / rh);
-  return { w, h };
-}
-
-function uid() {
-  return Math.random().toString(36).slice(2, 9);
-}
-
-function escapeDrawtext(text: string) {
-  return text.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\u2019");
-}
-
-// Converts a CSS color (#hex, rgb(...), rgba(...)) into FFmpeg drawtext's
-// "0xRRGGBB@alpha" color spec, multiplying in the clip's own opacity.
-function toFFmpegColor(cssColor: string, extraAlpha = 1) {
-  let r = 0, g = 0, b = 0, a = 1;
-  const rgbaMatch = cssColor.match(/rgba?\(([^)]+)\)/i);
-  if (rgbaMatch) {
-    const parts = rgbaMatch[1].split(",").map((s) => parseFloat(s.trim()));
-    [r, g, b] = parts;
-    if (parts.length > 3) a = parts[3];
-  } else if (cssColor.startsWith("#")) {
-    const hex = cssColor.slice(1);
-    r = parseInt(hex.slice(0, 2), 16) || 0;
-    g = parseInt(hex.slice(2, 4), 16) || 0;
-    b = parseInt(hex.slice(4, 6), 16) || 0;
-  }
-  const hexColor = "0x" + [r, g, b].map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join("");
-  return `${hexColor}@${(a * extraAlpha).toFixed(2)}`;
-}
-
-function probeVideoMeta(file: File): Promise<{ duration: number; w: number; h: number }> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const v = document.createElement("video");
-    v.preload = "metadata";
-    v.src = url;
-    v.onloadedmetadata = () => {
-      resolve({ duration: v.duration || 0, w: v.videoWidth || 1280, h: v.videoHeight || 720 });
-      URL.revokeObjectURL(url);
-    };
-    v.onerror = () => resolve({ duration: 0, w: 1280, h: 720 });
-  });
-}
-
-function probeAudioDuration(file: File): Promise<number> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const a = new Audio();
-    a.preload = "metadata";
-    a.src = url;
-    a.onloadedmetadata = () => { resolve(a.duration || 0); URL.revokeObjectURL(url); };
-    a.onerror = () => resolve(0);
-  });
-}
-
-// ============================================================
-// Aspect ratio / resolution preset picker
-// ============================================================
-function PresetPicker({ onConfirm }: { onConfirm: (w: number, h: number) => void }) {
-  const [aspectId, setAspectId] = useState("9:16");
-  const [resolutionId, setResolutionId] = useState("1080p");
-  const [useCustom, setUseCustom] = useState(false);
-  const [customW, setCustomW] = useState(1080);
-  const [customH, setCustomH] = useState(1920);
-
-  const aspect = ASPECT_RATIOS.find((a) => a.id === aspectId) ?? ASPECT_RATIOS[0];
-  const resolution = RESOLUTIONS.find((r) => r.id === resolutionId) ?? RESOLUTIONS[0];
-  const computed = computeDims(aspect.rw, aspect.rh, resolution.long);
-  const chosen = useCustom ? { w: customW, h: customH } : computed;
-
+function Slider({ label, value, min, max, step, onChange, format }: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; format: (v: number) => string }) {
   return (
-    <div className="tool-page">
-      <h1><Monitor size={22} /> Trình Dựng Video Timeline</h1>
-      <p className="tool-subtitle">Chọn tỷ lệ khung hình và độ phân giải riêng cho dự án trước khi vào giao diện chỉnh sửa.</p>
-
-      <div className="vt-panel-title" style={{ marginTop: 12 }}>1. Tỷ lệ khung hình</div>
-      <div className="vt-preset-grid">
-        {ASPECT_RATIOS.map((a) => {
-          const maxSide = 34;
-          const ratio = a.rw / a.rh;
-          const boxW = ratio >= 1 ? maxSide : maxSide * ratio;
-          const boxH = ratio >= 1 ? maxSide / ratio : maxSide;
-          return (
-            <div key={a.id} className={`vt-preset-card ${!useCustom && aspectId === a.id ? "is-selected" : ""}`}
-              onClick={() => { setAspectId(a.id); setUseCustom(false); }}>
-              <div className="vt-preset-shape" style={{ width: boxW, height: boxH }} />
-              <div>
-                <div className="vt-preset-label">{a.label}</div>
-                <div className="vt-preset-dims">{a.sub}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="vt-panel-title" style={{ marginTop: 14 }}>2. Độ phân giải</div>
-      <div className="vt-preset-grid">
-        {RESOLUTIONS.map((r) => {
-          const dims = computeDims(aspect.rw, aspect.rh, r.long);
-          return (
-            <div key={r.id} className={`vt-preset-card ${!useCustom && resolutionId === r.id ? "is-selected" : ""}`}
-              onClick={() => { setResolutionId(r.id); setUseCustom(false); }}>
-              <div>
-                <div className="vt-preset-label">{r.label} · {dims.w}×{dims.h}</div>
-                <div className="vt-preset-dims">{r.sub}</div>
-              </div>
-            </div>
-          );
-        })}
-        <div className={`vt-preset-card ${useCustom ? "is-selected" : ""}`} onClick={() => setUseCustom(true)}>
-          <div>
-            <div className="vt-preset-label">Tuỳ chỉnh</div>
-            <div className="vt-preset-dims">Tự nhập kích thước</div>
-          </div>
-        </div>
-      </div>
-
-      {useCustom && (
-        <div className="vt-custom-dims">
-          <div className="tool-field" style={{ maxWidth: 110 }}>
-            <label>Rộng (px)</label>
-            <input type="number" min={64} max={4096} value={customW} onChange={(e) => setCustomW(Number(e.target.value) || 1080)} />
-          </div>
-          <span style={{ marginTop: 18 }}>×</span>
-          <div className="tool-field" style={{ maxWidth: 110 }}>
-            <label>Cao (px)</label>
-            <input type="number" min={64} max={4096} value={customH} onChange={(e) => setCustomH(Number(e.target.value) || 1920)} />
-          </div>
-        </div>
-      )}
-
-      <div className="tool-row">
-        <button className="tool-btn" onClick={() => onConfirm(chosen.w % 2 === 0 ? chosen.w : chosen.w - 1, chosen.h % 2 === 0 ? chosen.h : chosen.h - 1)}>
-          Bắt đầu chỉnh sửa ({chosen.w}×{chosen.h})
-        </button>
-      </div>
-    </div>
+    <label className="te-slider">
+      <span><em>{label}</em><b>{format(value)}</b></span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </label>
   );
 }
 
-// ============================================================
-// Main editor
-// ============================================================
 export function VideoTimeline() {
-  const [stage, setStage] = useState<"preset" | "editor">("preset");
-  const [canvasSize, setCanvasSize] = useState({ w: 1080, h: 1920 });
-  const [mediaLibrary, setMediaLibrary] = useState<MediaItem[]>([]);
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [zoomPct, setZoomPct] = useState(50);
-  const [scrollWidth, setScrollWidth] = useState(800);
-  const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("");
+  const tr = useTr();
+  const [project, setProjectState] = useState<Project>({ clips: [], ratio: "16:9" });
+  const projectRef = useRef(project);
+  const [media, setMedia] = useState<Map<string, Media>>(new Map());
+  const mediaRef = useRef(media);
+  const [, setMediaVer] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  const [pps, setPps] = useState(60);
+  const [playing, setPlaying] = useState(false);
+  const [time, setTimeState] = useState(0);
+  const timeRef = useRef(0);
+  const [panel, setPanel] = useState<Panel>("audio");
+  const [busyMsg, setBusyMsg] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  useBackgroundBusy(busy);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [dragOverTrackIndex, setDragOverTrackIndex] = useState<number | "new" | null>(null);
-  const [draggingTrackId, setDraggingTrackId] = useState<string | null>(null);
-  const [snapGuide, setSnapGuide] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [exp, setExp] = useState<{ pct: number; label: string } | null>(null);
+  const [expRes, setExpRes] = useState<720 | 1080>(720);
+  const [projectName, setProjectName] = useState("");
+  const [, setHistVer] = useState(0);
+  const cancelled = useRef(false);
 
-  const libraryInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rulerRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const videoElsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
-  const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const imgElsRef = useRef<Map<string, HTMLImageElement>>(new Map());
-  const rafRef = useRef<number | null>(null);
-  const draggingClipIdRef = useRef<string | null>(null);
-  const dragStateRef = useRef<null | {
-    type: "move-time" | "trim-left" | "trim-right" | "drag-position" | "scrub" | "reorder-track";
-    id: string;
-    startX: number;
-    startY?: number;
-    orig: any;
-  }>(null);
+  const timelineRef = useRef<TimelineHandle>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const audioInput = useRef<HTMLInputElement>(null);
+  const poolRef = useRef<MediaPool | null>(null);
+  const rafRef = useRef(0);
+  const drawRaf = useRef(0);
+  const playingRef = useRef(false);
+  const alive = useRef(true);
 
-  const totalDuration = tracks.reduce((max, t) => t.clips.reduce((m2, c) => Math.max(m2, c.start + c.duration), max), 0);
+  useBackgroundBusy(!!exp || !!busyMsg);
 
-  // Zoom is a 0-100% slider mapped between "whole timeline fits, no scrolling"
-  // and a fixed max detail level — scaled to the longest clip's reach, so
-  // zooming out always shows everything at once instead of needing to drag
-  // a horizontal scrollbar to see the end of the project.
-  const LABEL_GUTTER = 90;
-  const MAX_PX_PER_SEC = 200;
-  const laneWidth = Math.max(200, scrollWidth - LABEL_GUTTER - 24);
-  const fitPxPerSec = totalDuration > 0 ? Math.min(MAX_PX_PER_SEC, Math.max(8, laneWidth / totalDuration)) : 60;
-  const pxPerSec = fitPxPerSec + (MAX_PX_PER_SEC - fitPxPerSec) * (zoomPct / 100);
+  // ---------------------------------------------------------------- history
+  const past = useRef<Project[]>([]);
+  const future = useRef<Project[]>([]);
+  const lastKey = useRef<{ key: string; t: number } | null>(null);
+  const batchBase = useRef<Project | null>(null);
+
+  const setProject = useCallback((p: Project) => { projectRef.current = p; setProjectState(p); }, []);
+  const pushPast = (p: Project) => {
+    past.current.push(p);
+    if (past.current.length > 100) past.current.shift();
+    future.current = [];
+    setHistVer((v) => v + 1);
+  };
+  const commit = useCallback((fn: (p: Project) => Project, key?: string) => {
+    const cur = projectRef.current;
+    const next = fn(cur);
+    if (next === cur) return null;
+    const now = Date.now();
+    if (!(key && lastKey.current?.key === key && now - lastKey.current.t < 900)) pushPast(cur);
+    lastKey.current = key ? { key, t: now } : null;
+    setProject(next);
+    return next;
+  }, [setProject]);
+  const live = useCallback((fn: (p: Project) => Project) => {
+    const next = fn(projectRef.current);
+    if (next !== projectRef.current) setProject(next);
+  }, [setProject]);
+
+  const undo = () => {
+    const p = past.current.pop();
+    if (!p) return;
+    future.current.push(projectRef.current);
+    setProject(p);
+    setHistVer((v) => v + 1);
+  };
+  const redo = () => {
+    const p = future.current.pop();
+    if (!p) return;
+    past.current.push(projectRef.current);
+    setProject(p);
+    setHistVer((v) => v + 1);
+  };
+
+  const total = useMemo(() => projectDuration(project), [project]);
+  const totalRef = useRef(total);
+  totalRef.current = total;
+  const selected = useMemo(() => project.clips.find((c) => c.id === selectedId) ?? null, [project, selectedId]);
+  selectedRef.current = selectedId;
+  const { w: W, h: H } = useMemo(() => canvasSize(project.ratio, 720), [project.ratio]);
+
+  // ---------------------------------------------------------------- drawing & clock
+  const draw = useCallback(() => {
+    const cv = canvasRef.current;
+    const pool = poolRef.current;
+    if (!cv || !pool) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    drawFrame(ctx, cv.width, cv.height, timeRef.current, projectRef.current, mediaRef.current, pool, selectedRef.current, !playingRef.current);
+  }, []);
+  const requestDraw = useCallback(() => {
+    if (drawRaf.current) return;
+    drawRaf.current = requestAnimationFrame(() => { drawRaf.current = 0; draw(); });
+  }, [draw]);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width;
-      if (width) setScrollWidth(width);
+    alive.current = true;
+    cancelled.current = false;
+    const pool = new MediaPool();
+    pool.onFrameReady = requestDraw;
+    poolRef.current = pool;
+    return () => {
+      alive.current = false;
+      cancelAnimationFrame(rafRef.current);
+      cancelAnimationFrame(drawRaf.current);
+      drawRaf.current = 0;
+      cancelled.current = true;
+      pool.dispose();
+      mediaRef.current.forEach((m) => URL.revokeObjectURL(m.url));
+    };
+  }, [requestDraw]);
+
+  useEffect(() => {
+    poolRef.current?.ensure(project.clips, media);
+    poolRef.current?.sync(timeRef.current, playingRef.current, project.clips);
+    requestDraw();
+  }, [project, media, requestDraw]);
+
+  useEffect(() => { requestDraw(); }, [selectedId, W, H, requestDraw]);
+
+  const seek = useCallback((t: number, fromScroll = false) => {
+    const clamped = clamp(t, 0, totalRef.current);
+    timeRef.current = clamped;
+    if (!fromScroll) timelineRef.current?.setTime(clamped);
+    setTimeState(clamped);
+    poolRef.current?.sync(clamped, false, projectRef.current.clips);
+    requestDraw();
+  }, [requestDraw]);
+
+  const stop = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    playingRef.current = false;
+    setPlaying(false);
+    poolRef.current?.pauseAll();
+    requestDraw();
+  }, [requestDraw]);
+
+  const play = useCallback(() => {
+    if (totalRef.current <= 0) return;
+    if (timeRef.current >= totalRef.current - 0.05) seek(0);
+    playingRef.current = true;
+    setPlaying(true);
+    let last = performance.now();
+    let lastUi = 0;
+    const loop = (ts: number) => {
+      if (!playingRef.current) return;
+      const dt = Math.min(0.1, (ts - last) / 1000);
+      last = ts;
+      let t = timeRef.current + dt;
+      const ended = t >= totalRef.current;
+      if (ended) t = totalRef.current;
+      timeRef.current = t;
+      timelineRef.current?.setTime(t);
+      poolRef.current?.sync(t, true, projectRef.current.clips);
+      draw();
+      if (ts - lastUi > 100) { lastUi = ts; setTimeState(t); }
+      if (ended) { setTimeState(t); stop(); return; }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+  }, [draw, seek, stop]);
+
+  const onScrubTo = useCallback((t: number) => {
+    if (playingRef.current) stop();
+    seek(t, true);
+  }, [seek, stop]);
+
+  // ---------------------------------------------------------------- importing
+  async function importFiles(files: FileList | File[], only?: "audio") {
+    const list = Array.from(files);
+    if (!list.length) return;
+    setError("");
+    setBusyMsg(tr("Đang nhập media...", "Importing media..."));
+    try {
+      for (const file of list) {
+        const kind = mediaKind(file);
+        if (!kind || (only === "audio" && kind !== "audio")) {
+          setError(tr(`Không hỗ trợ tệp "${file.name}".`, `"${file.name}" is not a supported file.`));
+          continue;
+        }
+        const m = await importFile(file);
+        if (!m) {
+          setError(tr(`Không đọc được "${file.name}" (định dạng hoặc codec chưa được trình duyệt hỗ trợ).`, `Could not read "${file.name}" (format or codec not supported by this browser).`));
+          continue;
+        }
+        if (!alive.current) return;
+        const next = new Map(mediaRef.current);
+        next.set(m.id, m);
+        mediaRef.current = next;
+        setMedia(next);
+
+        const hadMain = projectRef.current.clips.some((c) => c.lane === "main");
+        let clip: Clip;
+        if (m.kind === "audio") {
+          clip = makeClip({ lane: "audio", kind: "audio", name: m.name, mediaId: m.id, start: timeRef.current, dur: m.duration });
+        } else {
+          clip = makeClip({ lane: "main", kind: m.kind, name: m.name, mediaId: m.id, start: 0, dur: m.kind === "image" ? DEFAULT_IMAGE_DUR : m.duration });
+        }
+        const at = clip.lane === "main" ? undefined : timeRef.current;
+        const added = commit((p) => {
+          let q = addClip(p, clip, at);
+          if (!hadMain && clip.lane === "main" && m.w && m.h) {
+            const r: RatioId = m.h > m.w ? "9:16" : m.w === m.h ? "1:1" : "16:9";
+            q = { ...q, ratio: r };
+          }
+          return q;
+        });
+        if (added) setSelectedId(clip.id);
+        if (m.kind === "video") {
+          addFilmstrip(m, () => !alive.current).then(() => { setMediaVer((v) => v + 1); });
+        }
+      }
+    } finally {
+      setBusyMsg("");
+    }
+  }
+
+  const onFilesPicked = (e: React.ChangeEvent<HTMLInputElement>, only?: "audio") => {
+    if (e.target.files) importFiles(e.target.files, only);
+    e.target.value = "";
+  };
+
+  // ---------------------------------------------------------------- editing actions
+  const addText = () => {
+    const clip = makeClip({
+      lane: "text", kind: "text", name: "Text", start: timeRef.current, dur: DEFAULT_TEXT_DUR,
+      text: tr("Nhập chữ của bạn", "Your text here"), style: { ...DEFAULT_TEXT_STYLE }, y: 0.8,
     });
-    observer.observe(el);
-    return () => observer.disconnect();
+    commit((p) => addClip(p, clip, timeRef.current));
+    setSelectedId(clip.id);
+    setPanel("text");
+  };
+
+  const doSplit = () => {
+    const t = timeRef.current;
+    const target = selected && t > selected.start && t < end(selected) ? selected : clipAt(projectRef.current, t, ["main"]) ?? null;
+    if (!target) return;
+    let rightId: string | null = null;
+    commit((p) => { const r = splitClip(p, target.id, t); rightId = r.rightId; return r.project; });
+    if (rightId) setSelectedId(target.id);
+  };
+  const doDelete = () => {
+    if (!selected) return;
+    commit((p) => removeClip(p, selected.id));
+    setSelectedId(null);
+  };
+  const doDuplicate = () => {
+    if (!selected) return;
+    let id: string | null = null;
+    commit((p) => { const r = duplicateClip(p, selected.id); id = r.newId; return r.project; });
+    if (id) setSelectedId(id);
+  };
+  const patch = (p: Partial<Clip>, key: string) => { if (selected) commit((pr) => updateClip(pr, selected.id, p), `${key}:${selected.id}`); };
+  const patchStyle = (s: Partial<TextStyle>, key: string) => { if (selected?.style) patch({ style: { ...selected.style, ...s } }, key); };
+  const mediaOf = (id: string) => { const c = projectRef.current.clips.find((x) => x.id === id); return c?.mediaId ? mediaRef.current.get(c.mediaId) : undefined; };
+
+  const api: TimelineApi = useMemo(() => ({
+    begin: () => { batchBase.current = projectRef.current; },
+    finish: () => {
+      const base = batchBase.current;
+      batchBase.current = null;
+      if (base && base !== projectRef.current) pushPast(base);
+    },
+    moveFree: (id, s) => live((p) => moveFree(p, id, s)),
+    reorderMain: (id, i) => live((p) => reorderMain(p, id, i)),
+    trimLeft: (id, t) => live((p) => trimLeft(p, id, t)),
+    trimRight: (id, t) => live((p) => trimRight(p, id, t, mediaOf(id))),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [live]);
+
+  // ---------------------------------------------------------------- preview: drag / scale the selected clip
+  const canvasDrag = useRef<null | { mode: "move" | "scale"; id: string; dx: number; dy: number; baseScale: number; baseDist: number; began: boolean }>(null);
+  const toCanvas = (e: React.PointerEvent) => {
+    const r = canvasRef.current!.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H, unit: W / r.width };
+  };
+  const onCanvasDown = (e: React.PointerEvent) => {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d")!;
+    const p = toCanvas(e);
+    const t = timeRef.current;
+    const visible = projectRef.current.clips.filter((c) => c.kind !== "audio" && t >= c.start && t < end(c));
+    const boxOf = (c: Clip) => clipBox(ctx, c, c.mediaId ? mediaRef.current.get(c.mediaId) : undefined, W, H);
+    const sel = visible.find((c) => c.id === selectedRef.current);
+    if (sel) {
+      const b = boxOf(sel);
+      const hx = b.cx + b.w / 2, hy = b.cy + b.h / 2;
+      if (Math.hypot(p.x - hx, p.y - hy) < 26 * p.unit) {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        canvasDrag.current = { mode: "scale", id: sel.id, dx: 0, dy: 0, baseScale: sel.scale, baseDist: Math.max(10, Math.hypot(hx - b.cx, hy - b.cy)), began: false };
+        return;
+      }
+    }
+    const order = ["text", "overlay", "main"] as const;
+    const hit = order.flatMap((lane) => visible.filter((c) => c.lane === lane).reverse()).find((c) => {
+      const b = boxOf(c);
+      return Math.abs(p.x - b.cx) <= b.w / 2 && Math.abs(p.y - b.cy) <= b.h / 2;
+    });
+    if (!hit) { setSelectedId(null); return; }
+    setSelectedId(hit.id);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    canvasDrag.current = { mode: "move", id: hit.id, dx: p.x - hit.x * W, dy: p.y - hit.y * H, baseScale: hit.scale, baseDist: 1, began: false };
+  };
+  const onCanvasMove = (e: React.PointerEvent) => {
+    const d = canvasDrag.current;
+    if (!d) return;
+    if (!d.began) { d.began = true; api.begin(); }
+    const p = toCanvas(e);
+    const c = projectRef.current.clips.find((x) => x.id === d.id);
+    if (!c) return;
+    if (d.mode === "move") {
+      live((pr) => updateClip(pr, d.id, { x: clamp((p.x - d.dx) / W, 0, 1), y: clamp((p.y - d.dy) / H, 0, 1) }));
+    } else {
+      const dist = Math.hypot(p.x - c.x * W, p.y - c.y * H);
+      live((pr) => updateClip(pr, d.id, { scale: clamp((d.baseScale * dist) / d.baseDist, 0.1, 5) }));
+    }
+  };
+  const onCanvasUp = () => {
+    if (canvasDrag.current?.began) api.finish();
+    canvasDrag.current = null;
+  };
+
+  // ---------------------------------------------------------------- keyboard + zoom shortcuts
+  const appRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("input, textarea, select, [contenteditable]")) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (e.code === "Space") { e.preventDefault(); playingRef.current ? stop() : play(); }
+      else if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+      else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
+      else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); doDelete(); }
+      else if (e.key.toLowerCase() === "s" && !mod) { e.preventDefault(); doSplit(); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); onScrubTo(timeRef.current - (e.shiftKey ? 1 : 1 / 30)); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); onScrubTo(timeRef.current + (e.shiftKey ? 1 : 1 / 30)); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, play, stop, onScrubTo]);
+
+  useEffect(() => {
+    const el = appRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !(e.target as HTMLElement).closest(".te-tl")) return;
+      e.preventDefault();
+      setPps((v) => clamp(v * (e.deltaY < 0 ? 1.2 : 1 / 1.2), 6, 300));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
-  // --- Flattening helpers --------------------------------------------------
-  function flatClipsOrdered(): { clip: Clip; track: Track }[] {
-    const out: { clip: Clip; track: Track }[] = [];
-    for (const track of tracks) for (const clip of track.clips) out.push({ clip, track });
-    return out;
-  }
-
-  function getActiveClipsAt(time: number) {
-    return flatClipsOrdered().filter(({ clip, track }) => track.visible && time >= clip.start && time < clip.start + clip.duration);
-  }
-
-  function findClipTrack(clipId: string): { track: Track; trackIndex: number } | null {
-    for (let i = 0; i < tracks.length; i++) {
-      if (tracks[i].clips.some((c) => c.id === clipId)) return { track: tracks[i], trackIndex: i };
-    }
-    return null;
-  }
-
-  // --- Media library --------------------------------------------------------
-  function kindFromMime(file: File): "video" | "image" | "audio" | null {
-    if (file.type.startsWith("video/")) return "video";
-    if (file.type.startsWith("image/")) return "image";
-    if (file.type.startsWith("audio/")) return "audio";
-    return null;
-  }
-
-  async function importFiles(list: FileList | null) {
-    if (!list) return [];
-    const files = Array.from(list);
-    const added: MediaItem[] = [];
-    for (const file of files) {
-      const kind = kindFromMime(file);
-      if (!kind) continue;
-      const objectUrl = URL.createObjectURL(file);
-      let sourceDuration: number | undefined;
-      if (kind === "video") sourceDuration = (await probeVideoMeta(file)).duration;
-      else if (kind === "audio") sourceDuration = await probeAudioDuration(file);
-      added.push({ id: uid(), kind, name: file.name, file, objectUrl, sourceDuration });
-    }
-    if (added.length) setMediaLibrary((prev) => [...prev, ...added]);
-    return added;
-  }
-
-  // --- Clip creation & placement --------------------------------------------
-  function makeClipFromMedia(media: MediaItem, start: number): Clip {
-    const duration = media.kind === "image" ? DEFAULT_IMAGE_DURATION : (media.sourceDuration || 1);
-    return {
-      id: uid(), mediaId: media.id, type: media.kind, name: media.name, start, duration,
-      trimIn: media.kind === "image" ? undefined : 0,
-      trimOut: media.kind === "image" ? undefined : (media.sourceDuration || duration),
-      x: 0.5, y: 0.5, scale: 1, opacity: 1, volume: 100
-    };
-  }
-
-  function makeTextClip(start: number): Clip {
-    return {
-      id: uid(), type: "text", name: "Chữ mới", start, duration: DEFAULT_TEXT_DURATION,
-      x: 0.5, y: 0.85, scale: 1, opacity: 1, volume: 100,
-      text: "Chữ mới", color: "#ffffff",
-      fontFamily: "Inter", fontSize: 5, bold: true, italic: false,
-      strokeColor: undefined, strokeWidth: 6, bgColor: "rgba(0,0,0,0.6)", shadowColor: undefined
-    };
-  }
-
-  function clipOverlapsTrack(track: Track, start: number, duration: number, excludeId?: string) {
-    const end = start + duration;
-    return track.clips.some((c) => c.id !== excludeId && start < c.start + c.duration && end > c.start);
-  }
-
-  // Inserts a clip into an existing track (by index) or appends a brand new
-  // track. Rejects (no-op, returns false) if it would overlap a sibling clip.
-  function placeClip(newClip: Clip, trackIndex: number | "new"): boolean {
-    let ok = true;
-    setTracks((prev) => {
-      if (trackIndex === "new") {
-        return [...prev, { id: uid(), visible: true, clips: [newClip] }];
-      }
-      const track = prev[trackIndex];
-      if (!track) { ok = false; return prev; }
-      if (clipOverlapsTrack(track, newClip.start, newClip.duration)) { ok = false; return prev; }
-      const next = [...prev];
-      next[trackIndex] = { ...track, clips: [...track.clips, newClip].sort((a, b) => a.start - b.start) };
-      return next;
-    });
-    return ok;
-  }
-
-  function quickAddMedia(media: MediaItem) {
-    const clip = makeClipFromMedia(media, currentTime);
-    const lastIndex = tracks.length - 1;
-    if (lastIndex >= 0 && placeClip(clip, lastIndex)) { setSelectedClipId(clip.id); return; }
-    placeClip(clip, "new");
-    setSelectedClipId(clip.id);
-  }
-
-  function quickAddText() {
-    const clip = makeTextClip(currentTime);
-    placeClip(clip, "new");
-    setSelectedClipId(clip.id);
-  }
-
-  function removeClip(id: string) {
-    setTracks((prev) => prev.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== id) })).filter((t) => t.clips.length > 0));
-    videoElsRef.current.get(id)?.pause(); videoElsRef.current.delete(id);
-    audioElsRef.current.get(id)?.pause(); audioElsRef.current.delete(id);
-    imgElsRef.current.delete(id);
-    setSelectedClipId((prev) => (prev === id ? null : prev));
-  }
-
-  function updateClip(id: string, patch: Partial<Clip>) {
-    setTracks((prev) => prev.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === id ? { ...c, ...patch } : c)) })));
-  }
-
-  function toggleTrackVisible(trackId: string) {
-    setTracks((prev) => prev.map((t) => (t.id === trackId ? { ...t, visible: !t.visible } : t)));
-  }
-
-  // --- Drop targeting (media-bin drag, OS-file drag) ------------------------
-  function resolveTrackIndexAt(clientX: number, clientY: number): number | "new" {
-    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
-    const trackEl = el?.closest?.("[data-track-index]") as HTMLElement | null;
-    if (!trackEl) return "new";
-    const attr = trackEl.dataset.trackIndex;
-    if (attr === "new") return "new";
-    const idx = Number(attr);
-    return Number.isFinite(idx) ? idx : "new";
-  }
-
-  function computeDropTime(clientX: number, clientY: number): number {
-    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
-    const laneEl = el?.closest?.(".vt-track-lane") as HTMLElement | null;
-    const refEl = laneEl ?? rulerRef.current;
-    if (!refEl) return 0;
-    const rect = refEl.getBoundingClientRect();
-    return Math.max(0, (clientX - rect.left) / pxPerSec);
-  }
-
-  async function onTimelineDrop(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverTrackIndex(null);
-    const trackIndex = resolveTrackIndexAt(e.clientX, e.clientY);
-    const dropTime = computeDropTime(e.clientX, e.clientY);
-
-    const mediaId = e.dataTransfer.getData("text/plain");
-    const existingMedia = mediaLibrary.find((m) => m.id === mediaId);
-    if (existingMedia) {
-      const snapped = computeSnappedTime(dropTime, "");
-      const clip = makeClipFromMedia(existingMedia, snapped);
-      const ok = placeClip(clip, trackIndex);
-      if (ok) setSelectedClipId(clip.id);
-      else setError("Vị trí này đã có clip khác — hãy thả vào khoảng trống.");
+  // ---------------------------------------------------------------- export
+  async function doExport() {
+    if (!project.clips.some((c) => c.lane === "main" || c.lane === "overlay")) {
+      setError(tr("Hãy thêm ít nhất 1 video hoặc ảnh vào dự án.", "Add at least one video or image to the project."));
       return;
     }
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const added = await importFiles(e.dataTransfer.files);
-      let t = dropTime;
-      for (const media of added) {
-        const clip = makeClipFromMedia(media, t);
-        const ok = placeClip(clip, trackIndex);
-        if (ok) t += clip.duration;
-      }
-    }
-  }
-
-  function onTimelineDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverTrackIndex(resolveTrackIndexAt(e.clientX, e.clientY));
-  }
-
-  async function handlePageDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setIsDragOver(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      await importFiles(e.dataTransfer.files);
-    }
-  }
-
-  // --- Media elements for preview -------------------------------------------
-  // HTMLMediaElement.volume only accepts 0..1, but clips allow up to 200% —
-  // clamp for the live preview (the FFmpeg export still applies the full
-  // boosted volume via its own `volume=` filter).
-  function applyVolume(el: HTMLMediaElement, clip: Clip) {
-    el.muted = clip.volume <= 0;
-    el.volume = Math.max(0, Math.min(1, clip.volume / 100));
-  }
-
-  function getVideoEl(clip: Clip): HTMLVideoElement {
-    let el = videoElsRef.current.get(clip.id);
-    if (!el) {
-      const media = mediaLibrary.find((m) => m.id === clip.mediaId);
-      el = document.createElement("video");
-      el.src = media?.objectUrl ?? "";
-      el.playsInline = true;
-      el.preload = "auto";
-      videoElsRef.current.set(clip.id, el);
-    }
-    applyVolume(el, clip);
-    return el;
-  }
-
-  function getAudioEl(clip: Clip): HTMLAudioElement {
-    let el = audioElsRef.current.get(clip.id);
-    if (!el) {
-      const media = mediaLibrary.find((m) => m.id === clip.mediaId);
-      el = new Audio(media?.objectUrl ?? "");
-      el.preload = "auto";
-      audioElsRef.current.set(clip.id, el);
-    }
-    applyVolume(el, clip);
-    return el;
-  }
-
-  function getImgEl(clip: Clip): HTMLImageElement {
-    let el = imgElsRef.current.get(clip.id);
-    if (!el) {
-      const media = mediaLibrary.find((m) => m.id === clip.mediaId);
-      el = new Image();
-      el.src = media?.objectUrl ?? "";
-      imgElsRef.current.set(clip.id, el);
-    }
-    return el;
-  }
-
-  // --- Canvas drawing & hit-testing --------------------------------------
-  function computeMediaBox(srcW: number, srcH: number, clip: Clip) {
-    const cw = canvasSize.w;
-    const ch = canvasSize.h;
-    const baseScale = Math.min(cw / srcW, ch / srcH);
-    const dw = srcW * baseScale * clip.scale;
-    const dh = srcH * baseScale * clip.scale;
-    const cx = clip.x * cw;
-    const cy = clip.y * ch;
-    return { x0: cx - dw / 2, y0: cy - dh / 2, dw, dh, cx, cy };
-  }
-
-  function getTextBox(ctx: CanvasRenderingContext2D, clip: Clip) {
-    const fontSize = Math.round(canvasSize.h * ((clip.fontSize ?? 5) / 100));
-    const weight = clip.bold !== false ? "bold " : "";
-    const style = clip.italic ? "italic " : "";
-    ctx.font = `${style}${weight}${fontSize}px "${clip.fontFamily || "Inter"}", sans-serif`;
-    const metrics = ctx.measureText(clip.text || "");
-    const padX = 18;
-    const boxW = metrics.width + padX * 2;
-    const boxH = fontSize * 1.5;
-    const cx = clip.x * canvasSize.w;
-    const cy = clip.y * canvasSize.h;
-    return { fontSize, boxW, boxH, x0: cx - boxW / 2, y0: cy - boxH / 2, x1: cx + boxW / 2, y1: cy + boxH / 2, cx, cy };
-  }
-
-  function drawFrame(time: number) {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width = canvasSize.w;
-    canvas.height = canvasSize.h;
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvasSize.w, canvasSize.h);
-
-    for (const { clip, track } of flatClipsOrdered()) {
-      if (!track.visible) continue;
-      if (time < clip.start || time >= clip.start + clip.duration) continue;
-      ctx.globalAlpha = clip.opacity;
-      if (clip.type === "video") {
-        const el = getVideoEl(clip);
-        const w = el.videoWidth || canvasSize.w;
-        const h = el.videoHeight || canvasSize.h;
-        const box = computeMediaBox(w, h, clip);
-        ctx.drawImage(el, box.x0, box.y0, box.dw, box.dh);
-        if (draggingClipIdRef.current === clip.id) {
-          ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 2;
-          ctx.strokeRect(box.x0, box.y0, box.dw, box.dh);
-        }
-      } else if (clip.type === "image") {
-        const el = getImgEl(clip);
-        const w = el.naturalWidth || canvasSize.w;
-        const h = el.naturalHeight || canvasSize.h;
-        const box = computeMediaBox(w, h, clip);
-        ctx.drawImage(el, box.x0, box.y0, box.dw, box.dh);
-        if (draggingClipIdRef.current === clip.id) {
-          ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 2;
-          ctx.strokeRect(box.x0, box.y0, box.dw, box.dh);
-        }
-      } else if (clip.type === "text" && clip.text?.trim()) {
-        const box = getTextBox(ctx, clip);
-        if (clip.bgColor) {
-          ctx.fillStyle = clip.bgColor;
-          ctx.fillRect(box.x0, box.y0, box.boxW, box.boxH);
-        }
-        if (draggingClipIdRef.current === clip.id) {
-          ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 2;
-          ctx.strokeRect(box.x0, box.y0, box.boxW, box.boxH);
-        }
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        if (clip.shadowColor) {
-          ctx.shadowColor = clip.shadowColor;
-          ctx.shadowBlur = box.fontSize * 0.2;
-          ctx.shadowOffsetX = box.fontSize * 0.08;
-          ctx.shadowOffsetY = box.fontSize * 0.08;
-        }
-        if (clip.strokeColor) {
-          ctx.lineWidth = clip.strokeWidth ?? 6;
-          ctx.strokeStyle = clip.strokeColor;
-          ctx.lineJoin = "round";
-          ctx.strokeText(clip.text, box.cx, box.cy);
-        }
-        ctx.fillStyle = clip.color || "#fff";
-        ctx.fillText(clip.text, box.cx, box.cy);
-        ctx.shadowColor = "transparent";
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-      }
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  function hitTestClip(time: number, canvasX: number, canvasY: number): Clip | null {
-    const ctx = canvasRef.current?.getContext("2d");
-    if (!ctx) return null;
-    const active = getActiveClipsAt(time).filter(({ clip }) => clip.type !== "audio");
-    for (let i = active.length - 1; i >= 0; i--) {
-      const clip = active[i].clip;
-      if (clip.type === "text") {
-        const box = getTextBox(ctx, clip);
-        if (canvasX >= box.x0 && canvasX <= box.x1 && canvasY >= box.y0 && canvasY <= box.y1) return clip;
-      } else {
-        const el = clip.type === "video" ? getVideoEl(clip) : getImgEl(clip);
-        const w = (clip.type === "video" ? (el as HTMLVideoElement).videoWidth : (el as HTMLImageElement).naturalWidth) || canvasSize.w;
-        const h = (clip.type === "video" ? (el as HTMLVideoElement).videoHeight : (el as HTMLImageElement).naturalHeight) || canvasSize.h;
-        const box = computeMediaBox(w, h, clip);
-        if (canvasX >= box.x0 && canvasX <= box.x0 + box.dw && canvasY >= box.y0 && canvasY <= box.y0 + box.dh) return clip;
-      }
-    }
-    return null;
-  }
-
-  // Redraw when paused / clips / time change (scrub mode).
-  useEffect(() => {
-    if (isPlaying) return;
-    const active = getActiveClipsAt(currentTime).filter(({ clip }) => clip.type === "video");
-    active.forEach(({ clip }) => {
-      const el = getVideoEl(clip);
-      const localTime = (clip.trimIn ?? 0) + (currentTime - clip.start);
-      if (Math.abs(el.currentTime - localTime) > 0.05) {
-        const onSeeked = () => { drawFrame(currentTime); el.removeEventListener("seeked", onSeeked); };
-        el.addEventListener("seeked", onSeeked);
-        try { el.currentTime = localTime; } catch { /* ignore */ }
-      }
-    });
-    drawFrame(currentTime);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTime, tracks, canvasSize, isPlaying]);
-
-  // Playback loop (wall-clock driven so overlapping video/audio clips can play independently).
-  useEffect(() => {
-    if (!isPlaying) {
-      videoElsRef.current.forEach((v) => v.pause());
-      audioElsRef.current.forEach((a) => a.pause());
-      return;
-    }
-    const wallStart = performance.now() - currentTime * 1000;
-
-    function tick(ts: number) {
-      const t = (ts - wallStart) / 1000;
-      if (t >= totalDuration) {
-        videoElsRef.current.forEach((v) => v.pause());
-        audioElsRef.current.forEach((a) => a.pause());
-        setIsPlaying(false);
-        setCurrentTime(0);
-        drawFrame(0);
-        return;
-      }
-      setCurrentTime(t);
-      for (const { clip, track } of flatClipsOrdered()) {
-        if (clip.type !== "video" && clip.type !== "audio") continue;
-        const active = track.visible && t >= clip.start && t < clip.start + clip.duration;
-        const el = clip.type === "video" ? getVideoEl(clip) : getAudioEl(clip);
-        if (active) {
-          if (el.paused) {
-            try { el.currentTime = (clip.trimIn ?? 0) + (t - clip.start); } catch { /* ignore */ }
-            void el.play().catch(() => {});
-          }
-        } else if (!el.paused) {
-          el.pause();
-        }
-      }
-      drawFrame(t);
-      rafRef.current = requestAnimationFrame(tick);
-    }
-
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying]);
-
-  const hasClips = tracks.some((t) => t.clips.length > 0);
-
-  function togglePlay() {
-    if (!hasClips) return;
-    if (!isPlaying && currentTime >= totalDuration - 0.05) setCurrentTime(0);
-    setIsPlaying((p) => !p);
-  }
-
-  // Spacebar play/pause, like every video editor — ignored while typing in a
-  // text field (clip name/content, number inputs...) so it doesn't hijack typing.
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.code !== "Space") return;
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
-      e.preventDefault();
-      togglePlay();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasClips, isPlaying, currentTime, totalDuration]);
-
-  // --- Interaction: ruler / timeline scrubbing ---------------------------
-  function onRulerMouseDown(e: React.MouseEvent) {
-    if (e.target !== e.currentTarget) return;
-    e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const t = Math.max(0, Math.min(totalDuration, (e.clientX - rect.left) / pxPerSec));
-    setIsPlaying(false);
-    setCurrentTime(t);
-  }
-
-  function startTimeDrag(type: "move-time" | "trim-left" | "trim-right", clip: Clip, track: Track, e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedClipId(clip.id);
-    const sorted = [...track.clips].sort((a, b) => a.start - b.start);
-    const idx = sorted.findIndex((c) => c.id === clip.id);
-    const prev = sorted[idx - 1];
-    const next = sorted[idx + 1];
-    dragStateRef.current = {
-      type, id: clip.id, startX: e.clientX,
-      orig: {
-        start: clip.start, duration: clip.duration, trimIn: clip.trimIn, trimOut: clip.trimOut,
-        minStart: prev ? prev.start + prev.duration : 0,
-        maxEnd: next ? next.start : Infinity
-      }
-    };
-  }
-
-  function startTrackReorder(track: Track, e: React.MouseEvent) {
-    if ((e.target as HTMLElement).closest("button")) return; // let the eye-toggle button work normally
-    e.preventDefault();
-    setDraggingTrackId(track.id);
-    dragStateRef.current = { type: "reorder-track", id: track.id, startX: e.clientX, startY: e.clientY, orig: {} };
-  }
-
-  function onCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const canvasX = ((e.clientX - rect.left) / rect.width) * canvasSize.w;
-    const canvasY = ((e.clientY - rect.top) / rect.height) * canvasSize.h;
-    const hit = hitTestClip(currentTime, canvasX, canvasY);
-    if (!hit) return;
-    e.preventDefault();
-    setSelectedClipId(hit.id);
-    draggingClipIdRef.current = hit.id;
-    dragStateRef.current = { type: "drag-position", id: hit.id, startX: e.clientX, startY: e.clientY, orig: { x: hit.x, y: hit.y } };
-    drawFrame(currentTime);
-  }
-
-  // Magnet/snap: within a small pixel threshold of another clip's edge, the
-  // playhead, or t=0, snap exactly onto it instead of leaving a near-miss gap.
-  function computeSnappedTime(rawTime: number, excludeClipId: string): number {
-    const candidates: number[] = [0, currentTime];
-    for (const t of tracks) for (const c of t.clips) {
-      if (c.id === excludeClipId) continue;
-      candidates.push(c.start, c.start + c.duration);
-    }
-    const thresholdSec = SNAP_PX / pxPerSec;
-    let best: number | null = null;
-    let bestDist = thresholdSec;
-    for (const cand of candidates) {
-      const d = Math.abs(cand - rawTime);
-      if (d <= bestDist) { bestDist = d; best = cand; }
-    }
-    return best ?? rawTime;
-  }
-
-  useEffect(() => {
-    function onMove(e: MouseEvent) {
-      const drag = dragStateRef.current;
-      if (!drag) return;
-      e.preventDefault();
-
-      if (drag.type === "drag-position") {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const dxRel = (e.clientX - drag.startX) / rect.width;
-        const dyRel = (e.clientY - (drag.startY ?? e.clientY)) / rect.height;
-        const newX = Math.max(0, Math.min(1, drag.orig.x + dxRel));
-        const newY = Math.max(0, Math.min(1, drag.orig.y + dyRel));
-        updateClip(drag.id, { x: newX, y: newY });
-        return;
-      }
-
-      if (drag.type === "scrub") {
-        const dxSec = (e.clientX - drag.startX) / pxPerSec;
-        const newTime = Math.max(0, Math.min(totalDuration, drag.orig.time + dxSec));
-        setCurrentTime(newTime);
-        return;
-      }
-
-      if (drag.type === "reorder-track") {
-        const idx = resolveTrackIndexAt(e.clientX, e.clientY);
-        setTracks((prev) => {
-          const fromIdx = prev.findIndex((t) => t.id === drag.id);
-          if (fromIdx === -1) return prev;
-          const toIdx = idx === "new" ? prev.length - 1 : idx;
-          if (toIdx === fromIdx || toIdx < 0 || toIdx >= prev.length) return prev;
-          const next = [...prev];
-          const [moved] = next.splice(fromIdx, 1);
-          next.splice(toIdx, 0, moved);
-          return next;
-        });
-        return;
-      }
-
-      const dx = (e.clientX - drag.startX) / pxPerSec;
-
-      if (drag.type === "move-time") {
-        const rawStart = Math.max(0, drag.orig.start + dx);
-        const clampedStart = Math.max(drag.orig.minStart, Math.min(drag.orig.maxEnd - drag.orig.duration, rawStart));
-        const clampedEnd = clampedStart + drag.orig.duration;
-        const snappedStart = computeSnappedTime(clampedStart, drag.id);
-        const snappedEnd = computeSnappedTime(clampedEnd, drag.id);
-
-        let finalStart = clampedStart;
-        let guide: number | null = null;
-        if (snappedStart !== clampedStart) {
-          finalStart = snappedStart;
-          guide = snappedStart;
-        } else if (snappedEnd !== clampedEnd) {
-          finalStart = snappedEnd - drag.orig.duration;
-          guide = snappedEnd;
-        }
-        finalStart = Math.max(drag.orig.minStart, Math.min(drag.orig.maxEnd - drag.orig.duration, finalStart));
-        setSnapGuide(guide);
-        updateClip(drag.id, { start: finalStart });
-        return;
-      }
-
-      setTracks((prev) => prev.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => {
-          if (c.id !== drag.id) return c;
-          if (drag.type === "trim-left") {
-            const rawStart = drag.orig.start + dx;
-            const snapped = computeSnappedTime(rawStart, drag.id);
-            setSnapGuide(snapped !== rawStart ? snapped : null);
-            if (c.type === "video" || c.type === "audio") {
-              const wantTrimIn = drag.orig.trimIn + (snapped - drag.orig.start);
-              const newTrimIn = Math.max(0, Math.min(wantTrimIn, drag.orig.trimOut - MIN_LEN));
-              const appliedDx = newTrimIn - drag.orig.trimIn;
-              const newStart = Math.max(drag.orig.minStart, drag.orig.start + appliedDx);
-              return { ...c, trimIn: newTrimIn, start: newStart, duration: drag.orig.trimOut - newTrimIn };
-            }
-            const newStart = Math.max(drag.orig.minStart, Math.min(snapped, drag.orig.start + drag.orig.duration - MIN_LEN));
-            const newDuration = drag.orig.start + drag.orig.duration - newStart;
-            return { ...c, duration: newDuration, start: newStart };
-          }
-          if (drag.type === "trim-right") {
-            const rawEnd = drag.orig.start + drag.orig.duration + dx;
-            const snappedEnd = computeSnappedTime(rawEnd, drag.id);
-            setSnapGuide(snappedEnd !== rawEnd ? snappedEnd : null);
-            const cappedEnd = Math.min(drag.orig.maxEnd, snappedEnd);
-            if (c.type === "video" || c.type === "audio") {
-              const media = mediaLibrary.find((m) => m.id === c.mediaId);
-              const sourceMax = media?.sourceDuration ?? drag.orig.trimOut;
-              const wantTrimOut = drag.orig.trimOut + (cappedEnd - (drag.orig.start + drag.orig.duration));
-              const newTrimOut = Math.min(sourceMax, Math.max(wantTrimOut, drag.orig.trimIn + MIN_LEN));
-              return { ...c, trimOut: newTrimOut, duration: newTrimOut - drag.orig.trimIn };
-            }
-            const newDuration = Math.max(MIN_LEN, cappedEnd - drag.orig.start);
-            return { ...c, duration: newDuration };
-          }
-          return c;
-        })
-      })));
-    }
-
-    function onUp() {
-      if (dragStateRef.current?.type === "drag-position") {
-        draggingClipIdRef.current = null;
-      }
-      dragStateRef.current = null;
-      setDraggingTrackId(null);
-      setSnapGuide(null);
-    }
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pxPerSec, totalDuration]);
-
-  // --- Export -------------------------------------------------------------
-  async function handleExport() {
-    if (!hasClips) {
-      setError("Hãy thêm ít nhất 1 clip video/ảnh vào dự án.");
-      return;
-    }
-    setBusy(true);
+    stop();
+    cancelled.current = false;
     setError("");
-    setProgress(0);
+    setExp({ pct: 0, label: tr("Đang chuẩn bị...", "Preparing...") });
     try {
-      const w = canvasSize.w;
-      const h = canvasSize.h;
-      const orderedClips = flatClipsOrdered().filter(({ track }) => track.visible).map(({ clip }) => clip);
-
-      setStatus("Đang nạp bộ xử lý FFmpeg...");
-      const ffmpeg = await loadSharedFfmpeg();
-      const offProgress = ffmpeg.on("progress", ({ progress: p }) => setProgress(Math.min(100, Math.round(p * 100))));
-      const logLines: string[] = [];
-      const offLog = ffmpeg.on("log", ({ message }) => {
-        logLines.push(message);
-        if (logLines.length > 60) logLines.shift();
+      const blob = await exportProject({
+        project, media, longEdge: expRes === 1080 ? 1920 : 1280, tr,
+        onProgress: (f, label) => alive.current && setExp({ pct: f * 100, label }),
+        isCancelled: () => cancelled.current,
       });
-
-      const fileNames: Record<string, string> = {};
-      let fi = 0;
-      for (const clip of orderedClips) {
-        const media = clip.mediaId ? mediaLibrary.find((m) => m.id === clip.mediaId) : undefined;
-        if (!media) continue;
-        const ext = media.file.name.split(".").pop() || (clip.type === "image" ? "jpg" : clip.type === "audio" ? "mp3" : "mp4");
-        const name = `f${fi++}.${ext}`;
-        setStatus(`Đang ghi ${clip.name}...`);
-        await ffmpeg.writeFile(name, await fetchFile(media.file));
-        fileNames[clip.id] = name;
-      }
-
-      const inputArgs: string[] = [];
-      const inputIndexByClip: Record<string, number> = {};
-      let idx = 0;
-      orderedClips.forEach((clip) => {
-        if (!fileNames[clip.id]) return;
-        if (clip.type === "image") {
-          inputArgs.push("-loop", "1", "-t", String(clip.duration), "-i", fileNames[clip.id]);
-        } else {
-          inputArgs.push("-ss", String(clip.trimIn ?? 0), "-to", String(clip.trimOut ?? clip.duration), "-i", fileNames[clip.id]);
-        }
-        inputIndexByClip[clip.id] = idx++;
-      });
-      const bgIndex = idx;
-      inputArgs.push("-f", "lavfi", "-i", `color=c=black:s=${w}x${h}:d=${Math.max(totalDuration, 0.5)}:r=30`);
-
-      // Builds the full -filter_complex + output args. `includeAudio=false` is
-      // used as a fallback retry when a source clip turns out to have no audio
-      // stream at all (a silent screen-recording, etc.) — FFmpeg fails outright
-      // if the filter graph references a `:a` stream that doesn't exist.
-      function buildArgs(includeAudio: boolean) {
-        let filterComplex = `[${bgIndex}:v]format=yuv420p[base0]`;
-        let lastLabel = "base0";
-        let chainIdx = 0;
-
-        orderedClips.forEach((clip) => {
-          if (clip.type === "audio") return;
-          if (clip.type === "text") {
-            if (!clip.text?.trim()) return;
-            const fontSize = Math.max(16, Math.round(h * ((clip.fontSize ?? 5) / 100)));
-            const xExpr = `(w*${clip.x.toFixed(4)})-text_w/2`;
-            const yExpr = `(h*${clip.y.toFixed(4)})-text_h/2`;
-            const nextLabel = `c${chainIdx++}`;
-            const boxPart = clip.bgColor
-              ? `:box=1:boxcolor=${toFFmpegColor(clip.bgColor, clip.opacity)}:boxborderw=12`
-              : ":box=0";
-            const outlinePart = clip.strokeColor
-              ? `:borderw=${clip.strokeWidth ?? 6}:bordercolor=${toFFmpegColor(clip.strokeColor, clip.opacity)}`
-              : "";
-            const shadowPart = clip.shadowColor
-              ? `:shadowx=${Math.max(1, Math.round(fontSize * 0.08))}:shadowy=${Math.max(1, Math.round(fontSize * 0.08))}:shadowcolor=${toFFmpegColor(clip.shadowColor, clip.opacity)}`
-              : "";
-            filterComplex += `;[${lastLabel}]drawtext=text='${escapeDrawtext(clip.text)}':fontcolor=${toFFmpegColor(clip.color || "#ffffff", clip.opacity)}:fontsize=${fontSize}${boxPart}${outlinePart}${shadowPart}:x=${xExpr}:y=${yExpr}:enable='between(t,${clip.start},${clip.start + clip.duration})'[${nextLabel}]`;
-            lastLabel = nextLabel;
-            return;
-          }
-          const inIdx = inputIndexByClip[clip.id];
-          if (inIdx === undefined) return;
-          // video/image visual clip -> fit within (canvas * scale) box, matching the
-          // canvas preview's contain-fit-then-scale math exactly (see computeMediaBox).
-          const scaledLabel = `s${chainIdx}`;
-          const fitW = Math.max(2, Math.round(w * clip.scale));
-          const fitH = Math.max(2, Math.round(h * clip.scale));
-          filterComplex += `;[${inIdx}:v]scale=w=${fitW}:h=${fitH}:force_original_aspect_ratio=decrease,format=yuva420p,colorchannelmixer=aa=${clip.opacity.toFixed(2)}[${scaledLabel}]`;
-          const nextLabel = `c${chainIdx++}`;
-          const xExpr = `(${w}*${clip.x.toFixed(4)})-overlay_w/2`;
-          const yExpr = `(${h}*${clip.y.toFixed(4)})-overlay_h/2`;
-          filterComplex += `;[${lastLabel}][${scaledLabel}]overlay=x=${xExpr}:y=${yExpr}:enable='between(t,${clip.start},${clip.start + clip.duration})'[${nextLabel}]`;
-          lastLabel = nextLabel;
-        });
-
-        const args = [...inputArgs, "-filter_complex", null as any];
-
-        // Audio: mix every video/audio clip that has volume > 0, delayed to its timeline start.
-        let audioOutLabel: string | null = null;
-        if (includeAudio) {
-          const audioLabels: string[] = [];
-          let aIdx = 0;
-          orderedClips.forEach((clip) => {
-            if (clip.type !== "video" && clip.type !== "audio") return;
-            if (clip.volume <= 0) return;
-            const inIdx = inputIndexByClip[clip.id];
-            if (inIdx === undefined) return;
-            const label = `a${aIdx++}`;
-            const delayMs = Math.max(0, Math.round(clip.start * 1000));
-            filterComplex += `;[${inIdx}:a]volume=${(clip.volume / 100).toFixed(2)},adelay=${delayMs}|${delayMs}[${label}]`;
-            audioLabels.push(`[${label}]`);
-          });
-          if (audioLabels.length > 0) {
-            audioOutLabel = "aout";
-            filterComplex += `;${audioLabels.join("")}amix=inputs=${audioLabels.length}:duration=longest:dropout_transition=0[${audioOutLabel}]`;
-          }
-        }
-
-        args[args.length - 1] = filterComplex;
-        args.push("-map", `[${lastLabel}]`);
-        if (audioOutLabel) args.push("-map", `[${audioOutLabel}]`);
-        args.push("-t", String(totalDuration), "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p");
-        if (audioOutLabel) args.push("-c:a", "aac");
-        args.push("out.mp4");
-        return args;
-      }
-
-      setStatus("Đang dựng video...");
-      logLines.length = 0;
-      let exitCode = await ffmpeg.exec(buildArgs(true));
-
-      if (exitCode !== 0) {
-        const tail = logLines.slice(-8).join(" | ");
-        const looksLikeAudioIssue = /matches no streams|does not contain any stream|Invalid stream specifier|stream #0:1|Stream specifier ':a'/i.test(tail);
-        if (looksLikeAudioIssue) {
-          setStatus("Một clip không có track âm thanh — đang thử dựng lại không kèm tiếng của clip đó...");
-          logLines.length = 0;
-          exitCode = await ffmpeg.exec(buildArgs(false));
-        }
-        if (exitCode !== 0) {
-          const finalTail = logLines.slice(-8).join(" | ");
-          throw new Error(`FFmpeg dựng video thất bại${finalTail ? ": " + finalTail : ". Hãy thử với ít clip hơn hoặc định dạng phổ biến hơn."}`);
-        }
-      }
-
-      const data = await ffmpeg.readFile("out.mp4");
-      const blob = new Blob([data as BlobPart], { type: "video/mp4" });
-      downloadBlob(blob, "video_timeline.mp4");
-      setStatus("Hoàn tất! Đã dựng video và tải xuống.");
-
-      for (const n of Object.values(fileNames)) await ffmpeg.deleteFile(n).catch(() => {});
-      await ffmpeg.deleteFile("out.mp4").catch(() => {});
-      offProgress?.();
-      offLog?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Có lỗi xảy ra khi dựng video.");
-    } finally {
-      setBusy(false);
+      downloadBlob(blob, safeFilename(projectName.trim() || tr("Video dựng", "Edited video"), "mp4"));
+      setExp({ pct: 100, label: tr("Hoàn tất! Đã tải video xuống.", "Done! The video was downloaded.") });
+      setTimeout(() => alive.current && setExp(null), 2500);
+    } catch (e: any) {
+      if (e?.message === "CANCELLED") setExp(null);
+      else { setExp(null); setError(e?.message || tr("Có lỗi xảy ra khi dựng video.", "Something went wrong while rendering.")); }
     }
   }
+  const cancelExport = () => { cancelled.current = true; terminateSharedFfmpeg(); setExp(null); };
 
-  const rulerTicks = useMemo(() => {
-    const step = pxPerSec >= 80 ? 1 : pxPerSec >= 40 ? 2 : 5;
-    const ticks: number[] = [];
-    for (let t = 0; t <= totalDuration + step; t += step) ticks.push(t);
-    return ticks;
-  }, [pxPerSec, totalDuration]);
+  // ---------------------------------------------------------------- panel sections available for the selection
+  const kind = selected?.kind;
+  const sections: Panel[] = [];
+  if (selected) {
+    if (kind === "video" || kind === "audio") sections.push("audio");
+    if (kind === "video" || kind === "image" || kind === "text") sections.push("look");
+    if (kind === "text") sections.push("text");
+    if (kind === "image" || kind === "text") sections.push("duration");
+  }
+  sections.push("ratio", "export");
+  useEffect(() => {
+    if (selected && !sections.includes(panel)) setPanel(sections[0]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, selected?.kind]);
+  const open = (p: Panel) => panel === p;
+  const canSplit = !!(selected ? time > selected.start + 0.1 && time < end(selected) - 0.1 : clipAt(project, time, ["main"]));
 
-  const selectedClip = useMemo(() => {
-    for (const t of tracks) {
-      const found = t.clips.find((c) => c.id === selectedClipId);
-      if (found) return found;
-    }
-    return null;
-  }, [tracks, selectedClipId]);
-
-  const tracksTopFirst = useMemo(
-    () => tracks.map((t, i) => ({ track: t, index: i })).reverse(),
-    [tracks]
+  const tbBtn = (icon: React.ReactNode, label: string, onClick: () => void, opts: { active?: boolean; disabled?: boolean; danger?: boolean } = {}) => (
+    <button type="button" className={`te-tb${opts.active ? " is-active" : ""}${opts.danger ? " is-danger" : ""}`} onClick={onClick} disabled={opts.disabled}>
+      {icon}<span>{label}</span>
+    </button>
   );
+  const panelBtn = (p: Panel, icon: React.ReactNode, label: string) => tbBtn(icon, label, () => setPanel(p), { active: open(p) });
 
-  if (stage === "preset") {
-    return <PresetPicker onConfirm={(w, h) => { setCanvasSize({ w, h }); setStage("editor"); }} />;
-  }
+  const empty = project.clips.length === 0;
 
   return (
-    <div className="tool-page">
-      <h1><Layers3 size={22} /> Trình Dựng Video Timeline</h1>
+    <div className="tool-page te-page">
+      <h1><Layers3 size={22} /> {tr("Trình Dựng Video", "Video Editor")}</h1>
       <p className="tool-subtitle">
-        Khung hình {canvasSize.w}×{canvasSize.h}. Nhập media vào thư viện, kéo xuống dòng thời gian ở bất kỳ vị trí nào, xếp track chồng lên nhau — xử lý bằng FFmpeg WebAssembly ngay trên trình duyệt.
+        {tr(
+          "Kéo dòng thời gian để lướt qua video — đầu phát đỏ luôn đứng giữa. Bấm một clip để chỉnh: tách, xóa, đổi tốc độ, âm lượng, thêm chữ và nhạc. Mọi thứ chạy trên thiết bị của bạn.",
+          "Swipe the timeline to scrub — the red playhead stays in the middle. Tap a clip to edit it: split, delete, change speed and volume, add text and music. Everything runs on your device."
+        )}
       </p>
 
+      <input ref={fileInput} type="file" accept="video/*,image/*,audio/*" multiple hidden onChange={(e) => onFilesPicked(e)} />
+      <input ref={audioInput} type="file" accept="audio/*" multiple hidden onChange={(e) => onFilesPicked(e, "audio")} />
+
       <div
-        className={`vt-wrap ${isDragOver ? "is-drag-over" : ""}`}
-        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-        onDragLeave={() => setIsDragOver(false)}
-        onDrop={handlePageDrop}
+        ref={appRef}
+        className={`te-app${dragOver ? " is-drag" : ""}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) importFiles(e.dataTransfer.files); }}
       >
-        {isDragOver && (
-          <div className="vt-drop-overlay">
-            <UploadCloud size={30} />
-            <span>Thả vào đây để nhập vào thư viện — kéo thả trực tiếp xuống dòng thời gian để đặt vào đúng vị trí</span>
-          </div>
-        )}
-
-        <div className="vt-workspace">
-          <div className="vt-workspace-left">
-            <div className="vt-preview">
-              {!hasClips ? (
-                <div className="vt-preview-empty">Thêm media để xem trước tại đây</div>
-              ) : (
-                <canvas ref={canvasRef}
-                  onMouseDown={onCanvasMouseDown}
-                  style={{ cursor: hitTestClip(currentTime, canvasSize.w / 2, canvasSize.h / 2) ? "move" : "default" }} />
+        <div className="te-top">
+          <div className="te-stage">
+            <div className={`te-preview${selectedId ? " is-editing" : ""}`} style={{ ["--ar" as string]: W / H }}>
+              <canvas
+                ref={(el) => { canvasRef.current = el; if (el && (el.width !== W || el.height !== H)) { el.width = W; el.height = H; } }}
+                onPointerDown={onCanvasDown}
+                onPointerMove={onCanvasMove}
+                onPointerUp={onCanvasUp}
+                onPointerCancel={onCanvasUp}
+              />
+              {empty && (
+                <button type="button" className="te-empty" onClick={() => fileInput.current?.click()}>
+                  <UploadCloud size={30} />
+                  <strong>{tr("Bấm để thêm video, ảnh hoặc nhạc", "Tap to add videos, images or music")}</strong>
+                  <span>{tr("hoặc kéo thả tệp vào đây", "or drop files here")}</span>
+                </button>
               )}
+              {busyMsg && <div className="te-busy">{busyMsg}</div>}
             </div>
 
-            <div className="vt-controls">
-              <button className="tool-icon-btn" onClick={togglePlay} disabled={!hasClips} style={{ border: "1px solid var(--line)" }}>
-                {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+            <div className="te-transport">
+              <button type="button" className="te-icon" onClick={() => onScrubTo(0)} disabled={empty} aria-label={tr("Về đầu", "Go to start")}><SkipBack size={18} /></button>
+              <button type="button" className="te-play" onClick={() => (playing ? stop() : play())} disabled={empty} aria-label={playing ? tr("Tạm dừng", "Pause") : tr("Phát", "Play")}>
+                {playing ? <Pause size={20} /> : <Play size={20} />}
               </button>
-              <span className="vt-time-label">{formatDuration(currentTime)} / {formatDuration(totalDuration)}</span>
+              <span className="te-clock">{fmtTime(time, 1)} <em>/ {fmtTime(total, 1)}</em></span>
+              <span className="te-spacer" />
+              <button type="button" className="te-icon" onClick={undo} disabled={!past.current.length} aria-label={tr("Hoàn tác", "Undo")}><Undo2 size={18} /></button>
+              <button type="button" className="te-icon" onClick={redo} disabled={!future.current.length} aria-label={tr("Làm lại", "Redo")}><Redo2 size={18} /></button>
+              <button type="button" className="te-icon" onClick={() => setPps((v) => clamp(v / 1.4, 6, 300))} aria-label={tr("Thu nhỏ", "Zoom out")}><ZoomOut size={18} /></button>
+              <button type="button" className="te-icon" onClick={() => setPps((v) => clamp(v * 1.4, 6, 300))} aria-label={tr("Phóng to", "Zoom in")}><ZoomIn size={18} /></button>
             </div>
           </div>
 
-          <div className="tool-card vt-properties-panel">
-            <div className="vt-panel-title">{selectedClip ? `Thuộc tính clip: ${selectedClip.name}` : "Thuộc tính clip"}</div>
-
-            {!selectedClip && (
-              <p className="vt-properties-empty">Chọn 1 clip trên dòng thời gian để chỉnh sửa thuộc tính.</p>
+          <aside className="te-panel" aria-live="polite">
+            {!selected && (
+              <p className="te-hint">
+                {empty
+                  ? tr("Bắt đầu bằng cách thêm media. Ảnh và video được nối liền nhau trên dòng chính; chữ và nhạc nằm ở các dòng riêng.", "Start by adding media. Images and videos join end to end on the main track; text and music sit on their own tracks.")
+                  : tr("Bấm vào một clip trên dòng thời gian (hoặc trong khung xem trước) để chỉnh sửa. Bấm lên khoảng trống để bỏ chọn.", "Tap a clip on the timeline (or in the preview) to edit it. Tap empty space to deselect.")}
+              </p>
             )}
 
-            {selectedClip?.type === "text" && (
-              <>
-                <div className="tool-row" style={{ marginTop: 0 }}>
-                  <div className="tool-field" style={{ flex: 2 }}>
-                    <label>Nội dung</label>
-                    <input type="text" value={selectedClip.text} onChange={(e) => updateClip(selectedClip.id, { text: e.target.value })} />
-                  </div>
-                  <div className="tool-field" style={{ maxWidth: 60 }}>
-                    <label>Màu chữ</label>
-                    <input type="color" value={selectedClip.color} onChange={(e) => updateClip(selectedClip.id, { color: e.target.value })} style={{ height: 36, padding: 2 }} />
-                  </div>
+            {selected && (selected.kind === "video" || selected.kind === "audio") && (
+              <section className={`te-section${open("audio") ? " is-open" : ""}`}>
+                <h3><Volume2 size={15} /> {tr("Âm thanh & tốc độ", "Audio & speed")}</h3>
+                <Slider label={tr("Âm lượng", "Volume")} value={Math.round(selected.volume * 100)} min={0} max={100} step={1} format={(v) => `${v}%`} onChange={(v) => patch({ volume: v / 100 }, "vol")} />
+                <div className="te-speed" role="radiogroup" aria-label={tr("Tốc độ", "Speed")}>
+                  {SPEEDS.map((s) => (
+                    <button key={s} type="button" role="radio" aria-checked={selected.speed === s} className={selected.speed === s ? "is-active" : ""}
+                      onClick={() => commit((p) => setSpeed(p, selected.id, s, mediaOf(selected.id)))}>{s}x</button>
+                  ))}
                 </div>
-
-                <div className="tool-field">
-                  <label>Font chữ</label>
-                  <select value={selectedClip.fontFamily ?? "Inter"} onChange={(e) => updateClip(selectedClip.id, { fontFamily: e.target.value })}>
-                    {TEXT_FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div className="tool-field">
-                  <label>Cỡ chữ ({selectedClip.fontSize ?? 5}%)</label>
-                  <input type="range" min={2} max={15} step={0.5} value={selectedClip.fontSize ?? 5} onChange={(e) => updateClip(selectedClip.id, { fontSize: Number(e.target.value) })} />
-                </div>
-
-                <div className="tool-row">
-                  <label className="vt-checkbox-field">
-                    <input type="checkbox" checked={selectedClip.bold !== false} onChange={(e) => updateClip(selectedClip.id, { bold: e.target.checked })} />
-                    Chữ đậm
-                  </label>
-                  <label className="vt-checkbox-field">
-                    <input type="checkbox" checked={!!selectedClip.italic} onChange={(e) => updateClip(selectedClip.id, { italic: e.target.checked })} />
-                    Chữ nghiêng
-                  </label>
-                </div>
-
-                <div className="tool-field">
-                  <label>Phong cách nhanh</label>
-                  <div className="vt-style-presets">
-                    {TEXT_STYLE_PRESETS.map((p) => (
-                      <button key={p.label} type="button" className="tool-btn tool-btn-secondary"
-                        onClick={() => updateClip(selectedClip.id, p.patch)}>
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="tool-field">
-                  <label className="vt-checkbox-field">
-                    <input type="checkbox" checked={!!selectedClip.strokeColor}
-                      onChange={(e) => updateClip(selectedClip.id, { strokeColor: e.target.checked ? "#000000" : undefined, strokeWidth: e.target.checked ? 6 : undefined })} />
-                    Viền chữ
-                  </label>
-                  {selectedClip.strokeColor && (
-                    <div className="vt-inline-controls">
-                      <input type="color" value={selectedClip.strokeColor} onChange={(e) => updateClip(selectedClip.id, { strokeColor: e.target.value })} />
-                      <input type="range" min={1} max={15} value={selectedClip.strokeWidth ?? 6} onChange={(e) => updateClip(selectedClip.id, { strokeWidth: Number(e.target.value) })} />
-                      <span className="vt-inline-value">{selectedClip.strokeWidth ?? 6}px</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="tool-field">
-                  <label className="vt-checkbox-field">
-                    <input type="checkbox" checked={!!selectedClip.shadowColor}
-                      onChange={(e) => updateClip(selectedClip.id, { shadowColor: e.target.checked ? "rgba(0,0,0,0.8)" : undefined })} />
-                    Đổ bóng
-                  </label>
-                  {selectedClip.shadowColor && (
-                    <div className="vt-inline-controls">
-                      <input type="color" value="#000000" onChange={(e) => updateClip(selectedClip.id, { shadowColor: e.target.value })} />
-                    </div>
-                  )}
-                </div>
-
-                <div className="tool-field">
-                  <label className="vt-checkbox-field">
-                    <input type="checkbox" checked={!!selectedClip.bgColor}
-                      onChange={(e) => updateClip(selectedClip.id, { bgColor: e.target.checked ? "rgba(0,0,0,0.6)" : undefined })} />
-                    Nền phía sau chữ
-                  </label>
-                  {selectedClip.bgColor && (
-                    <div className="vt-inline-controls">
-                      <input type="color" value="#000000" onChange={(e) => {
-                        const opacityMatch = selectedClip.bgColor?.match(/[\d.]+\)$/);
-                        const alpha = opacityMatch ? opacityMatch[0].replace(")", "") : "0.6";
-                        const hex = e.target.value;
-                        const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-                        updateClip(selectedClip.id, { bgColor: `rgba(${r},${g},${b},${alpha})` });
-                      }} />
-                      <select
-                        value={selectedClip.bgColor?.includes("0.3") ? "0.3" : selectedClip.bgColor?.includes("0.9") ? "0.9" : selectedClip.bgColor?.includes("1)") ? "1" : "0.6"}
-                        onChange={(e) => {
-                          const hexMatch = selectedClip.bgColor?.match(/rgba?\(([\d]+),([\d]+),([\d]+)/);
-                          const [r, g, b] = hexMatch ? [hexMatch[1], hexMatch[2], hexMatch[3]] : [0, 0, 0];
-                          updateClip(selectedClip.id, { bgColor: `rgba(${r},${g},${b},${e.target.value})` });
-                        }}>
-                        <option value="0.3">Mờ (30%)</option>
-                        <option value="0.6">Vừa (60%)</option>
-                        <option value="0.9">Đậm (90%)</option>
-                        <option value="1">Đặc (100%)</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-
-                <div className="tool-field">
-                  <label>Vị trí nhanh</label>
-                  <div className="vt-quick-pos">
-                    <button type="button" className="tool-btn tool-btn-secondary" onClick={() => updateClip(selectedClip.id, { y: 0.12 })}>Trên</button>
-                    <button type="button" className="tool-btn tool-btn-secondary" onClick={() => updateClip(selectedClip.id, { y: 0.5 })}>Giữa</button>
-                    <button type="button" className="tool-btn tool-btn-secondary" onClick={() => updateClip(selectedClip.id, { y: 0.88 })}>Dưới</button>
-                  </div>
-                </div>
-              </>
+              </section>
             )}
 
-            {selectedClip && (selectedClip.type === "video" || selectedClip.type === "image") && (
-              <>
-                <div className="tool-field" style={{ marginTop: 0 }}>
-                  <label>Kích thước ({Math.round(selectedClip.scale * 100)}%)</label>
-                  <input type="range" min={0.1} max={2} step={0.05} value={selectedClip.scale} onChange={(e) => updateClip(selectedClip.id, { scale: Number(e.target.value) })} />
-                </div>
-                <div className="tool-field">
-                  <label>Độ mờ ({Math.round(selectedClip.opacity * 100)}%)</label>
-                  <input type="range" min={0} max={1} step={0.05} value={selectedClip.opacity} onChange={(e) => updateClip(selectedClip.id, { opacity: Number(e.target.value) })} />
-                </div>
-              </>
+            {selected && selected.kind !== "audio" && (
+              <section className={`te-section${open("look") ? " is-open" : ""}`}>
+                <h3><SlidersHorizontal size={15} /> {tr("Hiển thị", "Appearance")}</h3>
+                <Slider label={tr("Độ mờ", "Opacity")} value={Math.round(selected.opacity * 100)} min={5} max={100} step={1} format={(v) => `${v}%`} onChange={(v) => patch({ opacity: v / 100 }, "op")} />
+                <Slider label={tr("Kích thước", "Size")} value={Math.round(selected.scale * 100)} min={10} max={300} step={1} format={(v) => `${v}%`} onChange={(v) => patch({ scale: v / 100 }, "sc")} />
+                <Slider label={tr("Vị trí ngang", "Horizontal")} value={Math.round(selected.x * 100)} min={0} max={100} step={1} format={(v) => `${v}%`} onChange={(v) => patch({ x: v / 100 }, "px")} />
+                <Slider label={tr("Vị trí dọc", "Vertical")} value={Math.round(selected.y * 100)} min={0} max={100} step={1} format={(v) => `${v}%`} onChange={(v) => patch({ y: v / 100 }, "py")} />
+                <button type="button" className="tool-btn tool-btn-secondary te-small" onClick={() => patch({ x: 0.5, y: selected.kind === "text" ? 0.8 : 0.5, scale: 1, opacity: 1 }, "reset")}>{tr("Đặt lại", "Reset")}</button>
+              </section>
             )}
 
-            {selectedClip && (selectedClip.type === "video" || selectedClip.type === "audio") && (
-              <div className="tool-field">
-                <label>Âm lượng ({selectedClip.volume}%)</label>
-                <input type="range" min={0} max={200} value={selectedClip.volume} onChange={(e) => updateClip(selectedClip.id, { volume: Number(e.target.value) })} />
-              </div>
-            )}
-
-            {selectedClip && selectedClip.type !== "audio" && (
-              <p style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Kéo trực tiếp clip này trên khung xem trước để đổi vị trí.</p>
-            )}
-          </div>
-        </div>
-
-        <div className="tool-card vt-media-library">
-          <div className="vt-panel-title">Thư viện media ({mediaLibrary.length})</div>
-          <div className="vt-media-grid">
-            {mediaLibrary.map((m) => {
-              const Icon = LAYER_META[m.kind].icon;
-              return (
-                <div key={m.id} className="vt-media-card"
-                  style={{ ["--layer-color" as string]: LAYER_META[m.kind].color }}
-                  draggable
-                  onDragStart={(e) => e.dataTransfer.setData("text/plain", m.id)}
-                  onClick={() => quickAddMedia(m)}
-                  title="Kéo xuống dòng thời gian, hoặc bấm để thêm nhanh tại vị trí đang xem">
-                  <Icon size={16} />
-                  <span className="vt-media-name">{m.name}</span>
-                  {m.sourceDuration !== undefined && <span className="vt-media-dur">{formatDuration(m.sourceDuration)}</span>}
+            {selected?.kind === "text" && selected.style && (
+              <section className={`te-section${open("text") ? " is-open" : ""}`}>
+                <h3><Pencil size={15} /> {tr("Nội dung chữ", "Text")}</h3>
+                <textarea className="te-textarea" rows={3} value={selected.text ?? ""} onChange={(e) => patch({ text: e.target.value }, "txt")} aria-label={tr("Nội dung chữ", "Text")} />
+                <Slider label={tr("Cỡ chữ", "Font size")} value={selected.style.size} min={3} max={20} step={0.5} format={(v) => `${v}`} onChange={(v) => patchStyle({ size: v }, "fs")} />
+                <div className="te-swatches" role="radiogroup" aria-label={tr("Màu chữ", "Text colour")}>
+                  {SWATCHES.map((c) => (
+                    <button key={c} type="button" role="radio" aria-checked={selected.style!.color === c} className={selected.style!.color === c ? "is-active" : ""} style={{ background: c }} onClick={() => patchStyle({ color: c }, "col")} aria-label={c} />
+                  ))}
                 </div>
-              );
-            })}
-            <button type="button" className="vt-media-add" onClick={() => libraryInputRef.current?.click()}>
-              <Plus size={16} /> Nhập file
-            </button>
-            <button type="button" className="vt-media-add" onClick={quickAddText}>
-              <Type size={16} color={LAYER_META.text.color} /> Thêm chữ
-            </button>
-            <input ref={libraryInputRef} type="file" hidden multiple accept="video/*,image/*,audio/*"
-              onChange={(e) => { void importFiles(e.target.files); e.target.value = ""; }} />
-          </div>
-          <p style={{ fontSize: 11.5, color: "var(--muted)", margin: "8px 0 0" }}>
-            Mẹo: nếu hộp thoại chọn file bị treo (hay gặp với MP3), hãy <strong>kéo thả file</strong> trực tiếp vào trang thay vì bấm nút. Mỗi file trong thư viện có thể kéo xuống dòng thời gian nhiều lần.
-          </p>
-        </div>
+                <div className="te-toggles">
+                  {([["bold", tr("Đậm", "Bold")], ["italic", tr("Nghiêng", "Italic")], ["stroke", tr("Viền", "Outline")], ["box", tr("Nền", "Box")], ["shadow", tr("Bóng", "Shadow")]] as const).map(([k, label]) => (
+                    <button key={k} type="button" aria-pressed={selected.style![k]} className={selected.style![k] ? "is-active" : ""} onClick={() => patchStyle({ [k]: !selected.style![k] } as Partial<TextStyle>, `st-${k}`)}>{label}</button>
+                  ))}
+                </div>
+              </section>
+            )}
 
-        <div className="vt-zoom-bar">
-          <ZoomOut size={13} style={{ flexShrink: 0 }} />
-          <input
-            type="range"
-            className="vt-zoom-slider"
-            min={0}
-            max={100}
-            value={zoomPct}
-            onChange={(e) => setZoomPct(Number(e.target.value))}
-            title="Phóng to/thu nhỏ dòng thời gian"
-          />
-          <ZoomIn size={14} style={{ flexShrink: 0 }} />
-          <span className="vt-zoom-pct">{zoomPct}%</span>
-        </div>
+            {selected && (selected.kind === "image" || selected.kind === "text") && (
+              <section className={`te-section${open("duration") ? " is-open" : ""}`}>
+                <h3><Clock size={15} /> {tr("Thời lượng", "Duration")}</h3>
+                <Slider label={tr("Hiển thị trong", "Shown for")} value={Number(selected.dur.toFixed(1))} min={0.5} max={30} step={0.1} format={(v) => `${v.toFixed(1)}s`} onChange={(v) => commit((p) => setDuration(p, selected.id, v), `dur:${selected.id}`)} />
+              </section>
+            )}
 
-        <div className="vt-timeline-scroll" ref={scrollRef}
-          onDragOver={onTimelineDragOver}
-          onDrop={onTimelineDrop}
-          onDragLeave={() => setDragOverTrackIndex(null)}>
-          <div className="vt-timeline-inner" style={{ width: Math.max(600, totalDuration * pxPerSec + 40) }}>
-            <div className="vt-track-row" style={{ marginTop: 0 }}>
-              <div className="vt-track-label" />
-              <div className="vt-ruler" ref={rulerRef} onMouseDown={onRulerMouseDown} style={{ width: Math.max(400, totalDuration * pxPerSec), cursor: "pointer" }}>
-                {rulerTicks.map((t) => (
-                  <div key={t} className="vt-ruler-tick" style={{ left: t * pxPerSec }}>{formatDuration(t)}</div>
+            <section className={`te-section${open("ratio") ? " is-open" : ""}`}>
+              <h3><RectangleHorizontal size={15} /> {tr("Tỉ lệ khung hình", "Aspect ratio")}</h3>
+              <div className="te-ratios" role="radiogroup" aria-label={tr("Tỉ lệ khung hình", "Aspect ratio")}>
+                {RATIOS.map((r) => (
+                  <button key={r.id} type="button" role="radio" aria-checked={project.ratio === r.id} className={project.ratio === r.id ? "is-active" : ""} onClick={() => commit((p) => ({ ...p, ratio: r.id }))}>
+                    <i style={{ aspectRatio: `${r.w}/${r.h}` }} />{r.id}
+                  </button>
                 ))}
               </div>
-            </div>
+            </section>
 
-            {tracksTopFirst.map(({ track, index }) => (
-              <div key={track.id} data-track-index={index}
-                className={`vt-track-row ${!track.visible ? "is-hidden-layer" : ""} ${draggingTrackId === track.id ? "is-reordering" : ""} ${dragOverTrackIndex === index ? "is-drop-target" : ""}`}>
-                <div className="vt-track-label" onMouseDown={(e) => startTrackReorder(track, e)} title="Kéo để đổi thứ tự track (trên = lớp trước)">
-                  <button className="tool-icon-btn" onClick={(e) => { e.stopPropagation(); toggleTrackVisible(track.id); }}>
-                    {track.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+            <section className={`te-section${open("export") ? " is-open" : ""}`}>
+              <h3><Download size={15} /> {tr("Xuất video", "Export")}</h3>
+              <label className="te-field">
+                <span>{tr("Tên tệp", "File name")}</span>
+                <input type="text" value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder={tr("Video dựng", "Edited video")} disabled={!!exp} />
+              </label>
+              <div className="te-ratios te-res" role="radiogroup" aria-label={tr("Độ phân giải", "Resolution")}>
+                {([720, 1080] as const).map((r) => (
+                  <button key={r} type="button" role="radio" aria-checked={expRes === r} className={expRes === r ? "is-active" : ""} onClick={() => setExpRes(r)} disabled={!!exp}>
+                    {r}p<small>{r === 720 ? tr("nhanh", "fast") : tr("nét hơn", "sharper")}</small>
                   </button>
-                  <GripVertical size={13} className="vt-track-grip" />
-                </div>
-                <div className="vt-track-lane" style={{ width: Math.max(400, totalDuration * pxPerSec) }} onMouseDown={onRulerMouseDown}>
-                  {track.clips.map((clip) => {
-                    const meta = LAYER_META[clip.type];
-                    return (
-                      <div
-                        key={clip.id}
-                        className={`vt-clip-block ${selectedClipId === clip.id ? "is-selected" : ""}`}
-                        style={{ left: clip.start * pxPerSec, width: Math.max(6, clip.duration * pxPerSec), ["--layer-color" as string]: meta.color }}
-                        onMouseDown={(e) => startTimeDrag("move-time", clip, track, e)}
-                        onDoubleClick={() => removeClip(clip.id)}
-                        title={`${clip.name} — kéo để dời thời điểm, kéo mép để cắt, bấm đúp để xoá`}
-                      >
-                        <div className="vt-trim-handle left" onMouseDown={(e) => startTimeDrag("trim-left", clip, track, e)} />
-                        <span className="vt-clip-label">{clip.name}</span>
-                        <button className="vt-clip-delete" onClick={(e) => { e.stopPropagation(); removeClip(clip.id); }}><X size={10} /></button>
-                        <div className="vt-trim-handle right" onMouseDown={(e) => startTimeDrag("trim-right", clip, track, e)} />
-                      </div>
-                    );
-                  })}
-                </div>
+                ))}
               </div>
-            ))}
-
-            <div className="vt-track-row vt-new-track-zone" data-track-index="new">
-              <div className="vt-track-label" />
-              <div className={`vt-track-lane vt-empty-lane ${dragOverTrackIndex === "new" ? "is-drop-target" : ""}`} style={{ width: Math.max(400, totalDuration * pxPerSec) }}>
-                Kéo media từ thư viện xuống đây để tạo track mới
-              </div>
-            </div>
-
-            {snapGuide != null && <div className="vt-snap-guide" style={{ left: 90 + snapGuide * pxPerSec }} />}
-
-            <div className="vt-playhead" style={{ left: 90 + currentTime * pxPerSec }}>
-              <div
-                className="vt-playhead-handle"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsPlaying(false);
-                  dragStateRef.current = { type: "scrub", id: "", startX: e.clientX, orig: { time: currentTime } };
-                }}
-              />
-            </div>
-          </div>
+              {!exp ? (
+                <button type="button" className="tool-btn te-export" onClick={doExport} disabled={empty}>
+                  <Download size={16} /> {tr("Xuất MP4", "Export MP4")} ({fmtTime(total, 0)})
+                </button>
+              ) : (
+                <>
+                  <ProgressBar percent={exp.pct} label={exp.label} />
+                  {exp.pct < 100 && <button type="button" className="tool-btn tool-btn-danger te-small" onClick={cancelExport}><X size={14} /> {tr("Hủy", "Cancel")}</button>}
+                </>
+              )}
+            </section>
+          </aside>
         </div>
 
-        <div className="tool-row">
-          <button className="tool-btn" onClick={handleExport} disabled={busy || !hasClips}>
-            <Download size={15} /> {busy ? `Đang dựng video (${progress}%)` : "Dựng và tải video MP4"}
-          </button>
+        {error && <div className="tool-status-error te-error">{error}<button type="button" onClick={() => setError("")} aria-label={tr("Đóng", "Dismiss")}><X size={14} /></button></div>}
+
+        <TimelineView
+          ref={timelineRef}
+          project={project}
+          media={media}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          pps={pps}
+          onScrubTo={onScrubTo}
+          api={api}
+          timeRef={timeRef}
+          onAdd={() => fileInput.current?.click()}
+          addLabel={tr("Thêm media", "Add media")}
+          emptyHint={tr("Dòng thời gian trống", "Empty timeline")}
+        />
+
+        <div className="te-toolbar" role="toolbar" aria-label={tr("Công cụ", "Tools")}>
+          {tbBtn(<Plus size={20} />, tr("Thêm", "Add"), () => fileInput.current?.click())}
+          {tbBtn(<Type size={20} />, tr("Chữ", "Text"), addText)}
+          {tbBtn(<Music size={20} />, tr("Nhạc", "Music"), () => audioInput.current?.click())}
+          {selected && (
+            <>
+              <span className="te-tb-sep" />
+              {tbBtn(<Scissors size={20} />, tr("Tách", "Split"), doSplit, { disabled: !canSplit })}
+              {tbBtn(<Trash2 size={20} />, tr("Xóa", "Delete"), doDelete, { danger: true })}
+              {tbBtn(<Copy size={20} />, tr("Nhân đôi", "Duplicate"), doDuplicate)}
+              {sections.includes("audio") && panelBtn("audio", <Volume2 size={20} />, tr("Âm thanh", "Audio"))}
+              {sections.includes("look") && panelBtn("look", <SlidersHorizontal size={20} />, tr("Hiển thị", "Look"))}
+              {sections.includes("text") && panelBtn("text", <Pencil size={20} />, tr("Sửa chữ", "Edit text"))}
+              {sections.includes("duration") && panelBtn("duration", <Clock size={20} />, tr("Thời lượng", "Duration"))}
+            </>
+          )}
+          {!selected && canSplit && (<><span className="te-tb-sep" />{tbBtn(<Scissors size={20} />, tr("Tách", "Split"), doSplit)}</>)}
+          <span className="te-tb-sep" />
+          {panelBtn("ratio", <RectangleHorizontal size={20} />, tr("Tỉ lệ", "Ratio"))}
+          {panelBtn("export", <Download size={20} />, tr("Xuất", "Export"))}
         </div>
-        {busy && <div className="tool-progress-track"><div className="tool-progress-fill" style={{ width: `${progress}%` }} /></div>}
-        {status && !error && <div className="tool-status-ok">{status}</div>}
-        {error && <div className="tool-status-error">{error}</div>}
+        <p className="te-shortcuts">{tr("Phím tắt: Space phát/dừng · S tách · Delete xóa · Ctrl+Z hoàn tác · ← → từng khung hình · Ctrl + lăn chuột để phóng to", "Shortcuts: Space play/pause · S split · Delete remove · Ctrl+Z undo · ← → frame step · Ctrl + scroll to zoom")}</p>
       </div>
     </div>
   );
