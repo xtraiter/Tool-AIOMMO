@@ -13,9 +13,14 @@ Máy chủ của bạn không cần GPU; mô hình được tải về máy ngư
 | Tách Lời & Beat – Cao cấp | ↑ | HTDemucs (`htdemucs_embedded.onnx`) | ~181 MB | 4 luồng, cần máy mạnh + WebGPU |
 | Xóa Logo/Watermark – Nhanh & nhẹ | `premium.watermark.remover` | MI-GAN pipeline (`migan_pipeline.onnx`) | ~28 MB | mặc định trên điện thoại |
 | Xóa Logo/Watermark – Chất lượng cao | ↑ | Big-LaMa (`lama_fp32.onnx`) | ~208 MB | mặc định trên máy tính |
+| Ghi âm → văn bản / AI Tạo Phụ Đề – Nhẹ | `premium.audio.record`, `premium.video.subtitle` | Whisper Base (`onnx-community/whisper-base`, q8) | ~77 MB | chạy trên điện thoại |
+| ↑ – Cân bằng | ↑ | Whisper Small (`onnx-community/whisper-small`, q8) | ~250 MB | tiếng Việt khá |
+| ↑ – Cao cấp | ↑ | Whisper Large-v3 Turbo (`onnx-community/whisper-large-v3-turbo`, q4f16) | ~563 MB | cần WebGPU, chính xác nhất |
+
+Riêng Whisper: mã chạy nằm ở `public/asr/worker.js` (nạp thư viện transformers.js từ jsdelivr, phiên bản ghim cứng) và cấu hình mô hình ở `lib/asr/models.ts`. Nếu đặt `NEXT_PUBLIC_MODEL_BASE_URL`, mô hình được lấy từ `<BASE>/<repo>/onnx/<file>` (giữ nguyên cấu trúc thư mục Hugging Face, ví dụ `<BASE>/onnx-community/whisper-base/onnx/encoder_model_quantized.onnx`, cùng các file `config.json`, `tokenizer.json`, `preprocessor_config.json`...). Muốn chạy hoàn toàn không phụ thuộc jsdelivr, tải file thư viện về `public/` và sửa hằng `LIB` trong worker.
 
 Các chức năng **không** dùng mô hình (FFmpeg/Web Audio thuần): cắt/nối video, cắt nhạc, tăng âm lượng, trích xuất âm thanh,
-quay màn hình, thu âm, Trình Dựng Video, và chế độ *Video (logo cố định)* của Xóa Watermark (bộ lọc `delogo`).
+quay màn hình, thu âm (phần chuyển thành văn bản thì có), Trình Dựng Video, và chế độ *Video (logo cố định)* của Xóa Watermark (bộ lọc `delogo`).
 
 Nguồn mặc định (Hugging Face, công khai, có CORS):
 

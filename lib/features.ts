@@ -123,9 +123,9 @@ const VIDEO_FEATURES: AppFeature[] = [
   {
     slug: "premium.video.subtitle",
     name: "AI Tự Động Tạo Phụ Đề Video",
-    description: "AI nhận diện giọng nói, tự động tạo phụ đề và xuất file SRT / video có phụ đề.",
+    description: "AI nhận diện giọng nói, tự động tạo phụ đề và chỉnh sửa và xuất file SRT / VTT / TXT ngay trên trình duyệt.",
     category: "video",
-    route_path: PREMIUM_URL,
+    route_path: "/video/subtitle",
     icon_name: "captions",
     sort_order: 50,
     is_admin_only: false,
