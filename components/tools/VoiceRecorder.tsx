@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mic, Square, Download, Trash2, Play, RefreshCw } from "lucide-react";
+import { Mic, Square, Download, Trash2, RefreshCw } from "lucide-react";
 import { formatDuration, downloadBlob } from "@/lib/ffmpegLoader";
 import { Transcriber } from "./asr/Transcriber";
+import { AudioPlayer } from "./AudioPlayer";
 import "./tool-page.css";
 
 type Recording = { url: string; blob: Blob; duration: number };
@@ -163,12 +164,14 @@ export function VoiceRecorder() {
           </button>
         )}
         {recording && !isRecording && (
+          <>
+          <div style={{ maxWidth: 520, margin: "0 auto 16px" }}><AudioPlayer src={recording.url} duration={recording.duration} /></div>
           <div className="tool-row" style={{ justifyContent: "center" }}>
-            <button className="tool-btn tool-btn-secondary" onClick={() => new Audio(recording.url).play()}><Play size={15} /> Nghe lại</button>
             <button className="tool-btn" onClick={download}><Download size={15} /> Tải xuống</button>
             <button className="tool-btn tool-btn-danger" onClick={recordAgain}><RefreshCw size={15} /> Ghi lại</button>
             <button className="tool-icon-btn" onClick={discard} title="Xoá"><Trash2 size={15} /></button>
           </div>
+          </>
         )}
 
         {error && <div className="tool-status-error">{error}</div>}
