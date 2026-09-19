@@ -422,6 +422,9 @@ export function VideoTimeline() {
       else { setExp(null); setError(e?.message || tr("Có lỗi xảy ra khi dựng video.", "Something went wrong while rendering.")); }
     }
   }
+  useEffect(() => {
+    if (error) document.querySelector(".te-error")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [error]);
   const cancelExport = () => { cancelled.current = true; terminateSharedFfmpeg(); setExp(null); };
 
   // ---------------------------------------------------------------- panel sections available for the selection
@@ -446,7 +449,16 @@ export function VideoTimeline() {
       {icon}<span>{label}</span>
     </button>
   );
-  const panelBtn = (p: Panel, icon: React.ReactNode, label: string) => tbBtn(icon, label, () => setPanel(p), { active: open(p) });
+  const showPanel = (p: Panel) => {
+    setPanel(p);
+    // Bring the section into view (the side panel scrolls on desktop, the page on phones) and focus the text box for "Edit text".
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(`.te-panel [data-sec="${p}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (p === "text") el?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+    }));
+  };
+  const panelBtn = (p: Panel, icon: React.ReactNode, label: string) => tbBtn(icon, label, () => showPanel(p), { active: open(p) });
 
   const empty = project.clips.length === 0;
 
@@ -514,7 +526,7 @@ export function VideoTimeline() {
             )}
 
             {selected && (selected.kind === "video" || selected.kind === "audio") && (
-              <section className={`te-section${open("audio") ? " is-open" : ""}`}>
+              <section data-sec="audio" className={`te-section${open("audio") ? " is-open" : ""}`}>
                 <h3><Volume2 size={15} /> {tr("Âm thanh & tốc độ", "Audio & speed")}</h3>
                 <Slider label={tr("Âm lượng", "Volume")} value={Math.round(selected.volume * 100)} min={0} max={100} step={1} format={(v) => `${v}%`} onChange={(v) => patch({ volume: v / 100 }, "vol")} />
                 <div className="te-speed" role="radiogroup" aria-label={tr("Tốc độ", "Speed")}>
@@ -527,7 +539,7 @@ export function VideoTimeline() {
             )}
 
             {selected && selected.kind !== "audio" && (
-              <section className={`te-section${open("look") ? " is-open" : ""}`}>
+              <section data-sec="look" className={`te-section${open("look") ? " is-open" : ""}`}>
                 <h3><SlidersHorizontal size={15} /> {tr("Hiển thị", "Appearance")}</h3>
                 <Slider label={tr("Độ mờ", "Opacity")} value={Math.round(selected.opacity * 100)} min={5} max={100} step={1} format={(v) => `${v}%`} onChange={(v) => patch({ opacity: v / 100 }, "op")} />
                 <Slider label={tr("Kích thước", "Size")} value={Math.round(selected.scale * 100)} min={10} max={300} step={1} format={(v) => `${v}%`} onChange={(v) => patch({ scale: v / 100 }, "sc")} />
@@ -538,7 +550,7 @@ export function VideoTimeline() {
             )}
 
             {selected?.kind === "text" && selected.style && (
-              <section className={`te-section${open("text") ? " is-open" : ""}`}>
+              <section data-sec="text" className={`te-section${open("text") ? " is-open" : ""}`}>
                 <h3><Pencil size={15} /> {tr("Nội dung chữ", "Text")}</h3>
                 <textarea className="te-textarea" rows={3} value={selected.text ?? ""} onChange={(e) => patch({ text: e.target.value }, "txt")} aria-label={tr("Nội dung chữ", "Text")} />
                 <Slider label={tr("Cỡ chữ", "Font size")} value={selected.style.size} min={3} max={20} step={0.5} format={(v) => `${v}`} onChange={(v) => patchStyle({ size: v }, "fs")} />
@@ -556,13 +568,13 @@ export function VideoTimeline() {
             )}
 
             {selected && (selected.kind === "image" || selected.kind === "text") && (
-              <section className={`te-section${open("duration") ? " is-open" : ""}`}>
+              <section data-sec="duration" className={`te-section${open("duration") ? " is-open" : ""}`}>
                 <h3><Clock size={15} /> {tr("Thời lượng", "Duration")}</h3>
                 <Slider label={tr("Hiển thị trong", "Shown for")} value={Number(selected.dur.toFixed(1))} min={0.5} max={30} step={0.1} format={(v) => `${v.toFixed(1)}s`} onChange={(v) => commit((p) => setDuration(p, selected.id, v), `dur:${selected.id}`)} />
               </section>
             )}
 
-            <section className={`te-section${open("ratio") ? " is-open" : ""}`}>
+            <section data-sec="ratio" className={`te-section${open("ratio") ? " is-open" : ""}`}>
               <h3><RectangleHorizontal size={15} /> {tr("Tỉ lệ khung hình", "Aspect ratio")}</h3>
               <div className="te-ratios" role="radiogroup" aria-label={tr("Tỉ lệ khung hình", "Aspect ratio")}>
                 {RATIOS.map((r) => (
@@ -573,7 +585,7 @@ export function VideoTimeline() {
               </div>
             </section>
 
-            <section className={`te-section${open("export") ? " is-open" : ""}`}>
+            <section data-sec="export" className={`te-section${open("export") ? " is-open" : ""}`}>
               <h3><Download size={15} /> {tr("Xuất video", "Export")}</h3>
               <label className="te-field">
                 <span>{tr("Tên tệp", "File name")}</span>
@@ -636,7 +648,7 @@ export function VideoTimeline() {
           {!selected && canSplit && (<><span className="te-tb-sep" />{tbBtn(<Scissors size={20} />, tr("Tách", "Split"), doSplit)}</>)}
           <span className="te-tb-sep" />
           {panelBtn("ratio", <RectangleHorizontal size={20} />, tr("Tỉ lệ", "Ratio"))}
-          {panelBtn("export", <Download size={20} />, tr("Xuất", "Export"))}
+          {tbBtn(<Download size={20} />, tr("Xuất", "Export"), () => { showPanel("export"); if (!exp) void doExport(); }, { active: open("export") || !!exp, disabled: empty })}
         </div>
         <p className="te-shortcuts">{tr("Phím tắt: Space phát/dừng · S tách · Delete xóa · Ctrl+Z hoàn tác · ← → từng khung hình · Ctrl + lăn chuột để phóng to", "Shortcuts: Space play/pause · S split · Delete remove · Ctrl+Z undo · ← → frame step · Ctrl + scroll to zoom")}</p>
       </div>
