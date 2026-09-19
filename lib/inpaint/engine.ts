@@ -92,7 +92,18 @@ export async function loadInpainter(tier: InpaintTier, useWebGpu: boolean, onDow
       feeds = { image: new ort.Tensor("uint8", im, [1, 3, S, S]), mask: new ort.Tensor("uint8", mk, [1, 1, S, S]) };
     }
 
-    const out = await ctx.session.run(feeds);
+    let out;
+    try {
+      out = await ctx.session.run(feeds);
+    } catch (e) {
+      if (ctx.backend !== "webgpu") throw e;
+      // Some ops are unsupported on WebGPU at run time: rebuild the session on WASM and retry once.
+      sessions.delete(key);
+      const fallback = await createSession(tier, false, () => {});
+      sessions.set(key, Promise.resolve(fallback));
+      Object.assign(ctx, fallback);
+      out = await ctx.session.run(feeds);
+    }
     const data = (out[ctx.session.outputNames[0]] as { data: ArrayLike<number> }).data;
     const res = new ImageData(S, S);
     for (let i = 0; i < n; i++) {

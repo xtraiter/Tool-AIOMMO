@@ -184,6 +184,7 @@ export function ImageRemover() {
     return true;
   }, [boxes]);
 
+  // WebGPU is not used here: LaMa's FFT layers fail on several WebGPU builds ("Can't perform binary op"), while WASM is reliable.
   const run = async () => {
     const cv = maskRef.current, img = current.current;
     if (!cv || !img || !size) return;
@@ -200,7 +201,7 @@ export function ImageRemover() {
     cancelled.current = false;
     try {
       setProgress({ pct: 0, label: tr("Đang chuẩn bị thư viện AI...", "Preparing the AI runtime...") });
-      const inp = await loadInpainter(tier, !!device?.webgpu && tier.id === "best", (l, t) =>
+      const inp = await loadInpainter(tier, false, (l, t) =>
         setProgress({ pct: (l / t) * 100, label: cached[tier.id] ? tr("Đang nạp mô hình từ bộ nhớ máy...", "Loading the model from local storage...") : tr(`Đang tải mô hình ${tier.modelName}: ${formatBytes(l)} / ${formatBytes(t)}`, `Downloading ${tier.modelName}: ${formatBytes(l)} / ${formatBytes(t)}`) }));
       setCached((c) => ({ ...c, [tier.id]: true }));
       const out = await removeMarked(img, hole, boxes, inp, (d, t) => setProgress({ pct: t ? (d / t) * 100 : 100, label: tr(`Đang xóa vùng ${Math.min(d + 1, t)}/${t}...`, `Removing area ${Math.min(d + 1, t)}/${t}...`) }), () => cancelled.current);
