@@ -1,3 +1,5 @@
+import { resolveModelUrl } from "@/lib/modelConfig";
+
 export type TierId = "light" | "balanced" | "high";
 
 export type Stem = "vocals" | "beat" | "drums" | "bass" | "other";
@@ -28,7 +30,7 @@ export const TIERS: TierConfig[] = [
     tagline: "Tách Lời + Beat cơ bản. Chạy tốt trên điện thoại và máy yếu.",
     engine: "mdx",
     modelName: "UVR MDX-Net (nhỏ)",
-    modelUrl: UVR + "UVR_MDXNET_9482.onnx",
+    modelUrl: resolveModelUrl(UVR + "UVR_MDXNET_9482.onnx", "UVR_MDXNET_9482.onnx"),
     sizeBytes: 29_700_000,
     stems: ["vocals", "beat"],
     needsWebGpu: false,
@@ -43,7 +45,7 @@ export const TIERS: TierConfig[] = [
     tagline: "Tách Lời + Beat sạch, hợp làm karaoke. Nên có WebGPU để nhanh.",
     engine: "mdx",
     modelName: "UVR MDX-Net Voc FT",
-    modelUrl: UVR + "UVR-MDX-NET-Voc_FT.onnx",
+    modelUrl: resolveModelUrl(UVR + "UVR-MDX-NET-Voc_FT.onnx", "UVR-MDX-NET-Voc_FT.onnx"),
     sizeBytes: 66_800_000,
     stems: ["vocals", "beat"],
     needsWebGpu: false,
@@ -58,7 +60,7 @@ export const TIERS: TierConfig[] = [
     tagline: "Tách 4 luồng: Lời, Trống, Bass, Nhạc nền. Cần máy mạnh có WebGPU.",
     engine: "demucs",
     modelName: "HTDemucs",
-    modelUrl: "https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx",
+    modelUrl: resolveModelUrl("https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx", "htdemucs_embedded.onnx"),
     sizeBytes: 181_000_000,
     stems: ["vocals", "drums", "bass", "other", "beat"],
     needsWebGpu: true,

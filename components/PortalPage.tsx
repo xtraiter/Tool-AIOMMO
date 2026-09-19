@@ -21,6 +21,7 @@ const LazyVoiceRecorder = dynamic(() => import("@/components/tools/VoiceRecorder
 const LazyScreenRecorder = dynamic(() => import("@/components/tools/ScreenRecorder").then((m) => ({ default: m.ScreenRecorder })), { ssr: false });
 const LazyZipExtractor = dynamic(() => import("@/components/tools/ZipExtractor").then((m) => ({ default: m.ZipExtractor })), { ssr: false });
 const LazyVideoTimeline = dynamic(() => import("@/components/tools/VideoTimeline").then((m) => ({ default: m.VideoTimeline })), { ssr: false });
+const LazyWatermarkRemover = dynamic(() => import("@/components/tools/WatermarkRemover").then((m) => ({ default: m.WatermarkRemover })), { ssr: false });
 const LazyVocalSeparator = dynamic(() => import("@/components/tools/VocalSeparator").then((m) => ({ default: m.VocalSeparator })), { ssr: false });
 const LazyMultiDownloader = dynamic(() => import("@/components/tools/MultiDownloader").then((m) => ({ default: m.MultiDownloader })), { ssr: false });
 const LazyAlbumDownloader = dynamic(() => import("@/components/tools/AlbumDownloader").then((m) => ({ default: m.AlbumDownloader })), { ssr: false });
@@ -98,13 +99,15 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     const hasBulkScanner = activeSlug === "premium.channel.scanner";
     const hasEcommerceInfo = activeSlug === "premium.product.info";
     const hasAudioTTS = activeSlug === "premium.audio.tts";
+    const hasWatermark = activeSlug === "premium.watermark.remover";
 
     const showNone = !hasVideoCut && !hasVideoJoin && !hasVideoScreenrecord && !hasAudioCut && !hasAudioExtract
       && !hasAudioVolume && !hasAudioRecord && !hasUtilityZip && !hasVideoTimeline
       && !hasTipsAll && !hasTipsMobile && !hasTipsSocial && !hasTipsAiNews
-      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo && !hasAudioTTS;
+      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo && !hasAudioTTS && !hasWatermark;
 
     if (hasAudioTTS) return <LazyAudioTTS />;
+    if (hasWatermark) return <LazyWatermarkRemover />;
     if (hasVideoCut) return <LazyVideoCutter />;
     if (hasVideoJoin) return <LazyVideoJoiner />;
     if (hasVideoScreenrecord) return <LazyScreenRecorder />;
