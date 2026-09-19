@@ -109,6 +109,16 @@ export function TrimBar({
     }
   }, [zoom, pps]);
 
+  // On long media the whole-file view moves the playhead well under 1 px/s, so it looks frozen: zoom in when playback starts.
+  useEffect(() => {
+    if (!playing || duration <= 0) return;
+    const wanted = 6; // px per second
+    if (pps >= 3) return;
+    pendingCenter.current = current;
+    setZoom(clamp(wanted / (viewW / duration), 1, 80));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing]);
+
   // Keep the playhead in view while playing.
   useEffect(() => {
     const el = scrollRef.current;

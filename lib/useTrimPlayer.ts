@@ -35,8 +35,11 @@ export function useTrimPlayer(
     el.play().catch(() => {});
   }, [mediaRef]);
 
+  // The <video>/<audio> usually mounts after the hook (it only renders once a file is chosen), so track the element itself.
+  const [el, setEl] = useState<HTMLMediaElement | null>(null);
+  useEffect(() => { if (mediaRef.current !== el) setEl(mediaRef.current); });
+
   useEffect(() => {
-    const el = mediaRef.current;
     if (!el) return;
     let raf = 0;
     const tick = () => {
@@ -65,7 +68,7 @@ export function useTrimPlayer(
       el.removeEventListener("seeked", onSeek);
       el.removeEventListener("timeupdate", onSeek);
     };
-  }, [mediaRef]);
+  }, [el]);
 
   return { current, playing, seek, toggle };
 }
