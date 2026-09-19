@@ -126,11 +126,8 @@ const ENGLISH_FEATURE_NAMES: Record<string, string> = {
   "audio.record": "Voice Recorder",
   "audio.extract.audiotab": "Extract Audio From Video",
   "utility.zip": "Extract ZIP Files Online",
+  "utility.convert": "File Format Converter",
   "premium.watermark.remover": "AI Watermark Remover",
-  "tips.all": "All Guides",
-  "tips.mobile": "Mobile Guide (iOS & Android)",
-  "tips.social": "Social Media Guide",
-  "tips.ai-news": "AI News & Trends",
 };
 
 const ENGLISH_FEATURE_DESCRIPTIONS: Record<string, string> = {
@@ -158,11 +155,8 @@ const ENGLISH_FEATURE_DESCRIPTIONS: Record<string, string> = {
   "audio.record": "Record directly from your microphone with a real-time waveform, download the WebM file instantly.",
   "audio.extract.audiotab": "Extract the full audio track from a video to high-quality MP3.",
   "utility.zip": "View and extract the contents of a ZIP file right in your browser.",
+  "utility.convert": "Convert Word to PDF, PDF to images/text, images to PDF, and image, video or audio formats right in your browser.",
   "premium.watermark.remover": "Automatically remove logos, text and watermarks from images/videos without blurring or artifacts.",
-  "tips.all": "A complete collection of usage guides and tips.",
-  "tips.mobile": "Shortcuts, battery tips, and mobile device tricks.",
-  "tips.social": "Extracting videos and photo albums from Facebook, TikTok, Douyin.",
-  "tips.ai-news": "AI models and the latest technology trends.",
 };
 
 const ENGLISH_BADGES: Record<string, string> = {
@@ -175,6 +169,7 @@ const ENGLISH_BADGES: Record<string, string> = {
   "MỚI": "NEW",
   "MICRO LIVE": "LIVE MIC",
   "SIÊU NHANH": "ULTRA FAST",
+  "MIỄN PHÍ": "FREE",
   "TỰ ĐỘNG": "AUTOMATIC",
 };
 
@@ -205,8 +200,8 @@ const CATEGORY_LABELS: Record<string, { vi: string; en: string }> = {
   download: { vi: "Tải Video & Album", en: "Download & Albums" },
   video: { vi: "Công Cụ Video", en: "Video Tools" },
   audio: { vi: "Âm Thanh", en: "Audio Tools" },
-  storage: { vi: "Lưu Trữ & Zip", en: "Storage & Zip" },
-  tips: { vi: "Hướng Dẫn", en: "Guides" },
+  image: { vi: "Hình Ảnh", en: "Images" },
+  office: { vi: "Công Cụ Văn Phòng", en: "Office Tools" },
 };
 
 export function categoryLabel(category: string, locale: UiLocale) {
@@ -222,8 +217,8 @@ const SECTION_TITLES: Record<string, { vi: string; en: string }> = {
   },
   video: { vi: "Công Cụ Video Trực Tuyến", en: "Online Video Tools" },
   audio: { vi: "Công Cụ Âm Thanh Trực Tuyến", en: "Online Audio Tools" },
-  storage: { vi: "Lưu Trữ & Tiện Ích Tệp", en: "Storage & File Utilities" },
-  tips: { vi: "Hướng Dẫn", en: "Guides" },
+  image: { vi: "Công Cụ Hình Ảnh", en: "Image Tools" },
+  office: { vi: "Công Cụ Văn Phòng", en: "Office Tools" },
 };
 
 export function sectionTitle(category: string, locale: UiLocale) {

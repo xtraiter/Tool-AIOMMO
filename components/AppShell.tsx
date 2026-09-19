@@ -13,8 +13,8 @@ import {
   Download,
   Film,
   Music,
-  FolderArchive,
-  Lightbulb,
+  ImageIcon,
+  Briefcase,
   RotateCcw
 } from "lucide-react";
 import { visibleNavFeatures, NAV_CATEGORY_ORDER, type AppFeature } from "@/lib/features";
@@ -28,16 +28,16 @@ const CATEGORY_ICON: Record<string, any> = {
   download: Download,
   video: Film,
   audio: Music,
-  storage: FolderArchive,
-  tips: Lightbulb
+  image: ImageIcon,
+  office: Briefcase
 };
 
 const CATEGORY_COLOR: Record<string, string> = {
   download: "#f59e0b",
   video: "#ec4899",
   audio: "#22c55e",
-  storage: "#06b6d4",
-  tips: "#a78bfa"
+  image: "#a78bfa",
+  office: "#06b6d4"
 };
 
 type Props = {
@@ -202,7 +202,7 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
   function renderCategoryItem(feature: AppFeature, onDone: () => void) {
     const Icon = getToolIcon(feature.icon_name);
     const isExternal = /^https?:\/\//i.test(feature.route_path ?? "");
-    const isPremium = feature.category !== "tips" && isExternal;
+    const isPremium = isExternal;
     const content = (
       <>
         <span className="tn-item-icon" style={{ ["--icon-color" as string]: colorForSlug(feature.slug) }}><Icon size={17} /></span>

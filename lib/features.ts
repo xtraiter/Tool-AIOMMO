@@ -25,7 +25,7 @@ export function visibleNavFeatures(features: AppFeature[]) {
 
 const PREMIUM_URL = companyRegisterUrl("app");
 
-export const NAV_CATEGORY_ORDER = ["download", "video", "audio", "storage", "tips"];
+export const NAV_CATEGORY_ORDER = ["download", "video", "audio", "image", "office"];
 
 // Tải Video & Album — chưa build được (cần scrape API nền tảng bên thứ ba), dẫn sang All In One MMO.
 const DOWNLOAD_FEATURES: AppFeature[] = [
@@ -214,73 +214,44 @@ const AUDIO_FEATURES: AppFeature[] = [
   }
 ];
 
-// Lưu Trữ & Zip
-const STORAGE_FEATURES: AppFeature[] = [
-  {
-    slug: "utility.zip",
-    name: "Giải Nén File ZIP Online",
-    description: "Xem danh sách và giải nén tập tin bên trong file ZIP ngay trên trình duyệt.",
-    category: "storage",
-    route_path: "/utility/zip",
-    icon_name: "folder-archive",
-    sort_order: 10,
-    is_admin_only: false,
-    badge: "SIÊU NHANH"
-  },
+// Hình ảnh
+const IMAGE_FEATURES: AppFeature[] = [
   {
     slug: "premium.watermark.remover",
     name: "Xóa Logo Watermark AI",
     description: "Xoá logo, chữ & watermark khỏi ảnh/video tự động, không làm mờ hay vỡ nét.",
-    category: "storage",
-    route_path: "/utility/watermark",
+    category: "image",
+    route_path: "/image/watermark",
     icon_name: "eraser",
-    sort_order: 20,
+    sort_order: 10,
     is_admin_only: false,
     badge: "AI ENGINE"
   }
 ];
 
-// Hướng Dẫn — trang nhúng (iframe), nội dung sẽ được điền link sau.
-const TIPS_FEATURES: AppFeature[] = [
+// Công cụ văn phòng
+const OFFICE_FEATURES: AppFeature[] = [
   {
-    slug: "tips.all",
-    name: "Tất Cả Hướng Dẫn",
-    description: "Tổng hợp hướng dẫn sử dụng và mẹo hay.",
-    category: "tips",
-    route_path: "/guide/all",
-    icon_name: "layers-3",
+    slug: "utility.convert",
+    name: "Chuyển Đổi Định Dạng Tệp",
+    description: "Đổi Word sang PDF, PDF sang ảnh/văn bản, ảnh sang PDF, đổi định dạng ảnh, video và âm thanh ngay trên trình duyệt.",
+    category: "office",
+    route_path: "/office/convert",
+    icon_name: "file-text",
     sort_order: 10,
-    is_admin_only: false
+    is_admin_only: false,
+    badge: "MIỄN PHÍ"
   },
   {
-    slug: "tips.mobile",
-    name: "Hướng Dẫn Di Động (iOS & Android)",
-    description: "Phím tắt, mẹo pin, thủ thuật thiết bị di động.",
-    category: "tips",
-    route_path: "/guide/mobile",
-    icon_name: "smartphone",
+    slug: "utility.zip",
+    name: "Giải Nén File ZIP Online",
+    description: "Xem danh sách và giải nén tập tin bên trong file ZIP ngay trên trình duyệt.",
+    category: "office",
+    route_path: "/utility/zip",
+    icon_name: "folder-archive",
     sort_order: 20,
-    is_admin_only: false
-  },
-  {
-    slug: "tips.social",
-    name: "Hướng Dẫn Mạng Xã Hội",
-    description: "Bóc tách video, album ảnh Facebook, TikTok, Douyin.",
-    category: "tips",
-    route_path: "/guide/social",
-    icon_name: "share-2",
-    sort_order: 30,
-    is_admin_only: false
-  },
-  {
-    slug: "tips.ai-news",
-    name: "AI News & Xu Hướng AI",
-    description: "Mô hình AI, xu hướng công nghệ mới.",
-    category: "tips",
-    route_path: "/guide/ai-news",
-    icon_name: "bot",
-    sort_order: 40,
-    is_admin_only: false
+    is_admin_only: false,
+    badge: "SIÊU NHANH"
   }
 ];
 
@@ -288,6 +259,6 @@ export const DEFAULT_LOCAL_FEATURES: AppFeature[] = [
   ...DOWNLOAD_FEATURES,
   ...VIDEO_FEATURES,
   ...AUDIO_FEATURES,
-  ...STORAGE_FEATURES,
-  ...TIPS_FEATURES
+  ...IMAGE_FEATURES,
+  ...OFFICE_FEATURES
 ];

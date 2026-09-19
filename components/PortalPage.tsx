@@ -6,11 +6,9 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { DEFAULT_LOCAL_FEATURES, type AppFeature } from "@/lib/features";
 import { ToolsLandingPage } from "@/features/landing/ToolsLandingPage";
-import { EmbedPage } from "@/components/tools/EmbedPage";
 import { isBackgroundBusy } from "@/lib/backgroundEffect";
 import { terminateSharedFfmpeg } from "@/lib/ffmpegLoader";
 import { useUiPreferences } from "@/lib/uiPreferences";
-import { Layers3, Smartphone, Share2, Bot } from "lucide-react";
 
 const LazyVideoCutter = dynamic(() => import("@/components/tools/VideoCutter").then((m) => ({ default: m.VideoCutter })), { ssr: false });
 const LazyVideoJoiner = dynamic(() => import("@/components/tools/VideoJoiner").then((m) => ({ default: m.VideoJoiner })), { ssr: false });
@@ -23,6 +21,7 @@ const LazyZipExtractor = dynamic(() => import("@/components/tools/ZipExtractor")
 const LazyVideoTimeline = dynamic(() => import("@/components/tools/VideoTimeline").then((m) => ({ default: m.VideoTimeline })), { ssr: false });
 const LazyWatermarkRemover = dynamic(() => import("@/components/tools/WatermarkRemover").then((m) => ({ default: m.WatermarkRemover })), { ssr: false });
 const LazySubtitleGenerator = dynamic(() => import("@/components/tools/SubtitleGenerator").then((m) => ({ default: m.SubtitleGenerator })), { ssr: false });
+const LazyFileConverter = dynamic(() => import("@/components/tools/FileConverter").then((m) => ({ default: m.FileConverter })), { ssr: false });
 const LazyVocalSeparator = dynamic(() => import("@/components/tools/VocalSeparator").then((m) => ({ default: m.VocalSeparator })), { ssr: false });
 const LazyMultiDownloader = dynamic(() => import("@/components/tools/MultiDownloader").then((m) => ({ default: m.MultiDownloader })), { ssr: false });
 const LazyAlbumDownloader = dynamic(() => import("@/components/tools/AlbumDownloader").then((m) => ({ default: m.AlbumDownloader })), { ssr: false });
@@ -89,11 +88,8 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     const hasAudioVolume = activeSlug === "audio.volume";
     const hasAudioRecord = activeSlug === "audio.record";
     const hasUtilityZip = activeSlug === "utility.zip";
+    const hasConvert = activeSlug === "utility.convert";
     const hasVideoTimeline = activeSlug === "video.timeline";
-    const hasTipsAll = activeSlug === "tips.all";
-    const hasTipsMobile = activeSlug === "tips.mobile";
-    const hasTipsSocial = activeSlug === "tips.social";
-    const hasTipsAiNews = activeSlug === "tips.ai-news";
     const hasVocalSeparator = activeSlug === "premium.vocal.separator";
     const hasMultiDownloader = activeSlug === "premium.downloader";
     const hasAlbumDownloader = activeSlug === "premium.album";
@@ -105,8 +101,7 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
 
     const showNone = !hasVideoCut && !hasVideoJoin && !hasVideoScreenrecord && !hasAudioCut && !hasAudioExtract
       && !hasAudioVolume && !hasAudioRecord && !hasUtilityZip && !hasVideoTimeline
-      && !hasTipsAll && !hasTipsMobile && !hasTipsSocial && !hasTipsAiNews
-      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo && !hasAudioTTS && !hasWatermark && !hasSubtitle;
+      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo && !hasAudioTTS && !hasWatermark && !hasSubtitle && !hasConvert;
 
     if (hasAudioTTS) return <LazyAudioTTS />;
     if (hasSubtitle) return <LazySubtitleGenerator />;
@@ -118,6 +113,7 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     if (hasAudioExtract) return <LazyAudioExtractor />;
     if (hasAudioVolume) return <LazyVolumeAmplifier />;
     if (hasAudioRecord) return <LazyVoiceRecorder />;
+    if (hasConvert) return <LazyFileConverter />;
     if (hasUtilityZip) return <LazyZipExtractor />;
     if (hasVideoTimeline) return <LazyVideoTimeline />;
     if (hasVocalSeparator) return <LazyVocalSeparator />;
@@ -125,10 +121,6 @@ export default function PortalPage({ initialSlug }: { initialSlug?: string }) {
     if (hasAlbumDownloader) return <LazyAlbumDownloader />;
     if (hasBulkScanner) return <LazyBulkScanner />;
     if (hasEcommerceInfo) return <LazyEcommerceInfo />;
-    if (hasTipsAll) return <EmbedPage icon={Layers3} title="Tất Cả Hướng Dẫn" subtitle="Tổng hợp hướng dẫn sử dụng và mẹo hay." />;
-    if (hasTipsMobile) return <EmbedPage icon={Smartphone} title="Hướng Dẫn Di Động (iOS & Android)" subtitle="Phím tắt, mẹo pin và thủ thuật thiết bị di động." />;
-    if (hasTipsSocial) return <EmbedPage icon={Share2} title="Hướng Dẫn Mạng Xã Hội" subtitle="Bóc tách video, album ảnh Facebook, TikTok, Douyin." />;
-    if (hasTipsAiNews) return <EmbedPage icon={Bot} title="AI News & Xu Hướng AI" subtitle="Mô hình AI, xu hướng công nghệ mới." />;
     if (showNone) return <ToolsLandingPage onSelectTool={(slug) => setActiveSlug(slug)} />;
     return null;
   }
