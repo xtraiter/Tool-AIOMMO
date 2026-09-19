@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     // Dưới đây là ví dụ payload chung chung, bạn có thể cần chỉnh sửa lại theo cấu trúc của repo bạn chọn.
     const requestBody = {
       text: text,
-      voice_id: voiceId || "v_nam_1",
+      speaker: voiceId || "v_nam_1",
     };
 
     const response = await fetch(ttsApiUrl, {

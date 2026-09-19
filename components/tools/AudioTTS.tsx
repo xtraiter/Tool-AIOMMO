@@ -7,17 +7,17 @@ import "./tool-page.css";
 import "./audio-tts.css";
 
 type Gender = "male" | "female";
-type Voice = { id: string; name: string; nameEn: string; gender: Gender; tag: string; tagEn: string };
+type Voice = { id: string; name: string; nameEn: string; gender: Gender; tag: string; tagEn: string; icon?: string };
 
 const VOICES: Voice[] = [
-  { id: "BV075_streaming", name: "Thanh niên tự tin", nameEn: "Confident young man", gender: "male", tag: "Hot", tagEn: "Popular" },
-  { id: "BV074_streaming", name: "Cô gái hoạt ngôn", nameEn: "Lively young woman", gender: "female", tag: "Hot", tagEn: "Popular" },
-  { id: "vi_female_huong", name: "Giọng nữ phổ thông", nameEn: "Standard female", gender: "female", tag: "Hot", tagEn: "Popular" },
-  { id: "BV421_vivn_streaming", name: "Giọng nam ngọt ngào", nameEn: "Sweet male", gender: "male", tag: "Hot", tagEn: "Popular" },
-  { id: "BV074_streaming_dsp", name: "Giọng bé", nameEn: "Child voice", gender: "female", tag: "Dễ thương", tagEn: "Cute" },
-  { id: "BV560_streaming", name: "Anh Dũng", nameEn: "Anh Dung", gender: "male", tag: "Hot", tagEn: "Popular" },
-  { id: "BV562_streaming", name: "Chí Mai", nameEn: "Chi Mai", gender: "female", tag: "Hot", tagEn: "Popular" },
-  { id: "BV075_streaming_vibrato_dsp", name: "Việt rung", nameEn: "Vibrato", gender: "male", tag: "Hiệu ứng", tagEn: "Effect" },
+  { id: "BV075_streaming", name: "Thanh niên tự tin", nameEn: "Confident young man", gender: "male", tag: "Hot", tagEn: "Popular", icon: "👨" },
+  { id: "BV074_streaming", name: "Cô gái hoạt ngôn", nameEn: "Lively young woman", gender: "female", tag: "Hot", tagEn: "Popular", icon: "👩" },
+  { id: "BV560_streaming", name: "Anh Dũng", nameEn: "Anh Dung", gender: "male", tag: "Hot", tagEn: "Popular", icon: "👨" },
+  { id: "BV562_streaming", name: "Chí Mai", nameEn: "Chi Mai", gender: "female", tag: "Hot", tagEn: "Popular", icon: "🌸" },
+  { id: "vi_female_huong", name: "Giọng nữ phổ thông", nameEn: "Standard female", gender: "female", tag: "Hot", tagEn: "Popular", icon: "👵" },
+  { id: "BV421_vivn_streaming", name: "Nam ngọt ngào", nameEn: "Sweet male", gender: "male", tag: "Hot", tagEn: "Popular", icon: "🎙️" },
+  { id: "BV074_streaming_dsp", name: "Giọng bé (dễ thương)", nameEn: "Cute child", gender: "female", tag: "Dễ thương", tagEn: "Cute", icon: "👶" },
+  { id: "BV075_streaming_vibrato_dsp", name: "Việt rung (hiệu ứng)", nameEn: "Vibrato effect", gender: "male", tag: "Hiệu ứng", tagEn: "Effect", icon: "🎙️" }
 ];
 
 const MAX_CHARS = 5000;
