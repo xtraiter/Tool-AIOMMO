@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:all": "concurrently \"npm run dev\" \"npm run tts-dev\"",
+    "tts-dev": "cd backend-tts && npm run dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -31,6 +33,7 @@
     "@types/node": "^24.10.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "concurrently": "^10.0.5",
     "electron": "^30.0.0",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.0.10",
