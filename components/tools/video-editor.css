@@ -149,3 +149,4 @@
   .te-play { width: 44px; height: 44px; }
   .te-clock { font-size: 13px; margin-left: 2px; }
 }
+.te-section.is-open > h3 { color: var(--accent); }
