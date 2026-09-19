@@ -232,11 +232,11 @@ const STORAGE_FEATURES: AppFeature[] = [
     name: "Xóa Logo Watermark AI",
     description: "Xoá logo, chữ & watermark khỏi ảnh/video tự động, không làm mờ hay vỡ nét.",
     category: "storage",
-    route_path: PREMIUM_URL,
+    route_path: "/utility/watermark",
     icon_name: "eraser",
     sort_order: 20,
     is_admin_only: false,
-    badge: "TỰ ĐỘNG"
+    badge: "AI ENGINE"
   }
 ];
 
