@@ -42,9 +42,14 @@ export async function POST(req: NextRequest) {
     console.log(`[API/album] ${platform.name}: ${safe.href}`);
 
     // TikTok photo posts: yt-dlp does not support them, so read the page data directly.
+    // Matches /photo/ URLs and all tiktok.com links (which may be photo posts).
     if (platform.id === "tiktok") {
       try {
-        const page = await safeFetchPage(safe.href, { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" });
+        const page = await safeFetchPage(safe.href, { 
+          "User-Agent": UA, 
+          "Accept-Language": "en-US,en;q=0.9",
+          "Referer": "https://www.tiktok.com/",
+        });
         const photos = extractTikTokPhotos(page.text);
         if (photos) {
           return NextResponse.json({
@@ -55,6 +60,13 @@ export async function POST(req: NextRequest) {
         }
         safe = await assertPublicHttpUrl(page.url); // resolved short link (vt./vm.tiktok.com)
       } catch { /* fall through to yt-dlp */ }
+      // /photo/ URLs are not supported by yt-dlp at all — return early with a clear error
+      if (safe.href.includes("/photo/")) {
+        return NextResponse.json(
+          { error: "TikTok ảnh: Không thể trích xuất ảnh từ link này. Hãy thử link ngắn (vm.tiktok.com) hoặc link video (tiktok.com/video/)." },
+          { status: 422 }
+        );
+      }
     }
 
     const { stdout } = await ytDlp(["--dump-single-json", "--no-warnings", "--flat-playlist"], safe.href);
