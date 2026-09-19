@@ -149,7 +149,7 @@ const ENGLISH_FEATURE_DESCRIPTIONS: Record<string, string> = {
   "video.join": "Drop multiple MP4 clips to merge into one video — no software install needed.",
   "video.screenrecord": "Record your desktop, an app window, or a browser tab with audio, export MP4/WebM instantly.",
   "audio.extract": "Extract the full audio track from a video to high-quality MP3.",
-  "premium.video.subtitle": "AI speech recognition automatically generates subtitles and exports SRT / subtitled video.",
+  "premium.video.subtitle": "AI speech recognition writes timed subtitles you can edit and export as SRT / VTT / TXT, right in your browser.",
   "video.timeline": "Multi-track video editing: combine clips/images, add background music, overlay text, export MP4.",
   "premium.audio.tts": "Turn text into natural AI speech, supports multi-character dialogue scripts.",
   "audio.cut": "Visual waveform, drag to trim, fade in/out, export the file right in your browser.",

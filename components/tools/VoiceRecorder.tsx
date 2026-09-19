@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Download, Trash2, Play, RefreshCw } from "lucide-react";
 import { formatDuration, downloadBlob } from "@/lib/ffmpegLoader";
+import { Transcriber } from "./asr/Transcriber";
 import "./tool-page.css";
 
 type Recording = { url: string; blob: Blob; duration: number };
@@ -172,6 +173,8 @@ export function VoiceRecorder() {
 
         {error && <div className="tool-status-error">{error}</div>}
       </div>
+
+      {recording && !isRecording && <Transcriber source={recording.blob} name="Ghi âm" />}
     </div>
   );
 }

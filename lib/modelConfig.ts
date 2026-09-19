@@ -9,3 +9,8 @@ const BASE = (process.env.NEXT_PUBLIC_MODEL_BASE_URL || "").replace(/\/+$/, "");
 export function resolveModelUrl(defaultUrl: string, fileName: string): string {
   return BASE ? `${BASE}/${fileName}` : defaultUrl;
 }
+
+/** The configured mirror folder ("" when models come from Hugging Face). */
+export function resolveModelBase(): string {
+  return BASE;
+}
