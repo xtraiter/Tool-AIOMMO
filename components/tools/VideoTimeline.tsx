@@ -25,7 +25,7 @@ import {
 import "./tool-page.css";
 import "./video-editor.css";
 
-type Panel = "audio" | "look" | "text" | "duration" | "ratio" | "export";
+type Panel = "audio" | "look" | "text" | "duration";
 
 const SWATCHES = ["#ffffff", "#000000", "#ffeb3b", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6", "#3b82f6", "#22c55e"];
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
@@ -436,7 +436,6 @@ export function VideoTimeline() {
     if (kind === "text") sections.push("text");
     if (kind === "image" || kind === "text") sections.push("duration");
   }
-  sections.push("ratio", "export");
   useEffect(() => {
     if (selected && !sections.includes(panel)) setPanel(sections[0]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -471,6 +470,41 @@ export function VideoTimeline() {
           "Swipe the timeline to scrub — the red playhead stays in the middle. Tap a clip to edit it: split, delete, change speed and volume, add text and music. Everything runs on your device."
         )}
       </p>
+
+      <div className="te-projbar" role="group" aria-label={tr("Cài đặt dự án", "Project settings")}>
+        <div className="te-pb-group">
+          <span className="te-pb-label">{tr("Tỉ lệ", "Ratio")}</span>
+          <div className="te-pb-ratios" role="radiogroup" aria-label={tr("Tỉ lệ khung hình", "Aspect ratio")}>
+            {RATIOS.map((r) => (
+              <button key={r.id} type="button" role="radio" aria-checked={project.ratio === r.id} className={project.ratio === r.id ? "is-active" : ""} onClick={() => commit((p) => ({ ...p, ratio: r.id }))} disabled={!!exp}>
+                <i style={{ aspectRatio: `${r.w}/${r.h}` }} />{r.id}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="te-pb-group">
+          <span className="te-pb-label">{tr("Chất lượng", "Quality")}</span>
+          <div className="te-pb-seg" role="radiogroup" aria-label={tr("Độ phân giải", "Resolution")}>
+            {([720, 1080] as const).map((r) => (
+              <button key={r} type="button" role="radio" aria-checked={expRes === r} className={expRes === r ? "is-active" : ""} onClick={() => setExpRes(r)} disabled={!!exp}>{r}p</button>
+            ))}
+          </div>
+        </div>
+        <label className="te-pb-name">
+          <span className="te-pb-label">{tr("Tên tệp", "File name")}</span>
+          <input type="text" value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder={tr("Video dựng", "Edited video")} disabled={!!exp} />
+        </label>
+        {!exp ? (
+          <button type="button" className="tool-btn te-pb-export" onClick={doExport} disabled={empty}>
+            <Download size={16} /> {tr("Xuất MP4", "Export MP4")} <small>{fmtTime(total, 0)}</small>
+          </button>
+        ) : (
+          <div className="te-pb-progress">
+            <ProgressBar percent={exp.pct} label={exp.label} />
+            {exp.pct < 100 && <button type="button" className="tool-btn tool-btn-danger te-small" onClick={cancelExport}><X size={14} /> {tr("Hủy", "Cancel")}</button>}
+          </div>
+        )}
+      </div>
 
       <input ref={fileInput} type="file" accept="video/*,image/*,audio/*" multiple hidden onChange={(e) => onFilesPicked(e)} />
       <input ref={audioInput} type="file" accept="audio/*" multiple hidden onChange={(e) => onFilesPicked(e, "audio")} />
@@ -573,42 +607,6 @@ export function VideoTimeline() {
                 <Slider label={tr("Hiển thị trong", "Shown for")} value={Number(selected.dur.toFixed(1))} min={0.5} max={30} step={0.1} format={(v) => `${v.toFixed(1)}s`} onChange={(v) => commit((p) => setDuration(p, selected.id, v), `dur:${selected.id}`)} />
               </section>
             )}
-
-            <section data-sec="ratio" className={`te-section${open("ratio") ? " is-open" : ""}`}>
-              <h3><RectangleHorizontal size={15} /> {tr("Tỉ lệ khung hình", "Aspect ratio")}</h3>
-              <div className="te-ratios" role="radiogroup" aria-label={tr("Tỉ lệ khung hình", "Aspect ratio")}>
-                {RATIOS.map((r) => (
-                  <button key={r.id} type="button" role="radio" aria-checked={project.ratio === r.id} className={project.ratio === r.id ? "is-active" : ""} onClick={() => commit((p) => ({ ...p, ratio: r.id }))}>
-                    <i style={{ aspectRatio: `${r.w}/${r.h}` }} />{r.id}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section data-sec="export" className={`te-section${open("export") ? " is-open" : ""}`}>
-              <h3><Download size={15} /> {tr("Xuất video", "Export")}</h3>
-              <label className="te-field">
-                <span>{tr("Tên tệp", "File name")}</span>
-                <input type="text" value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder={tr("Video dựng", "Edited video")} disabled={!!exp} />
-              </label>
-              <div className="te-ratios te-res" role="radiogroup" aria-label={tr("Độ phân giải", "Resolution")}>
-                {([720, 1080] as const).map((r) => (
-                  <button key={r} type="button" role="radio" aria-checked={expRes === r} className={expRes === r ? "is-active" : ""} onClick={() => setExpRes(r)} disabled={!!exp}>
-                    {r}p<small>{r === 720 ? tr("nhanh", "fast") : tr("nét hơn", "sharper")}</small>
-                  </button>
-                ))}
-              </div>
-              {!exp ? (
-                <button type="button" className="tool-btn te-export" onClick={doExport} disabled={empty}>
-                  <Download size={16} /> {tr("Xuất MP4", "Export MP4")} ({fmtTime(total, 0)})
-                </button>
-              ) : (
-                <>
-                  <ProgressBar percent={exp.pct} label={exp.label} />
-                  {exp.pct < 100 && <button type="button" className="tool-btn tool-btn-danger te-small" onClick={cancelExport}><X size={14} /> {tr("Hủy", "Cancel")}</button>}
-                </>
-              )}
-            </section>
           </aside>
         </div>
 
@@ -646,9 +644,6 @@ export function VideoTimeline() {
             </>
           )}
           {!selected && canSplit && (<><span className="te-tb-sep" />{tbBtn(<Scissors size={20} />, tr("Tách", "Split"), doSplit)}</>)}
-          <span className="te-tb-sep" />
-          {panelBtn("ratio", <RectangleHorizontal size={20} />, tr("Tỉ lệ", "Ratio"))}
-          {tbBtn(<Download size={20} />, tr("Xuất", "Export"), () => { showPanel("export"); if (!exp) void doExport(); }, { active: open("export") || !!exp, disabled: empty })}
         </div>
         <p className="te-shortcuts">{tr("Phím tắt: Space phát/dừng · S tách · Delete xóa · Ctrl+Z hoàn tác · ← → từng khung hình · Ctrl + lăn chuột để phóng to", "Shortcuts: Space play/pause · S split · Delete remove · Ctrl+Z undo · ← → frame step · Ctrl + scroll to zoom")}</p>
       </div>
