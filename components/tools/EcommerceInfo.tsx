@@ -34,8 +34,9 @@ type Product = {
 };
 
 const SAMPLE_LINKS = [
-  { label: "Nồi Inox Sunhouse (Link điện thoại)", url: "https://shopee.vn/product/57714861/5434892" },
+  { label: "Nồi Inox Sunhouse (Shopee Mobile)", url: "https://shopee.vn/product/57714861/5434892" },
   { label: "Máy Game Sup 400 (Shopee Web)", url: "https://shopee.vn/M%C3%A1y-Ch%C6%A1i-Game-Sup-400-Game-In-1-Retro-K%C3%A8m-Tay-C%E1%BA%A7m-Ch%C6%A1i-Game-2-Ng%C6%B0%E1%BB%9Di-i.2748938.3428960" },
+  { label: "Áo Thun Unisex (TikTok Shop)", url: "https://shop.tiktok.com/view/product/1729548464619620894" },
 ];
 
 export function EcommerceInfo() {
@@ -89,7 +90,7 @@ export function EcommerceInfo() {
   }, []);
 
   const isBlockedPlatform = (u: string) =>
-    /shopee\.(vn|com)|shop\.tiktok\.com|tiktok\.com\/(product|pdp)/i.test(u);
+    /shopee\.(vn|com)|shop\.tiktok\.com|tiktok\.com/i.test(u);
 
   const handleFetch = async () => {
     if (!url.trim()) return;
