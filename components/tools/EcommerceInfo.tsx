@@ -34,9 +34,9 @@ type Product = {
 };
 
 const SAMPLE_LINKS = [
-  { label: "Nồi Inox Sunhouse (Shopee Mobile)", url: "https://shopee.vn/product/57714861/5434892" },
-  { label: "Máy Game Sup 400 (Shopee Web)", url: "https://shopee.vn/M%C3%A1y-Ch%C6%A1i-Game-Sup-400-Game-In-1-Retro-K%C3%A8m-Tay-C%E1%BA%A7m-Ch%C6%A1i-Game-2-Ng%C6%B0%E1%BB%9Di-i.2748938.3428960" },
-  { label: "Áo Thun Unisex (TikTok Shop)", url: "https://shop.tiktok.com/view/product/1729548464619620894" },
+  { label: "Nồi Inox Sunhouse (Shopee)", url: "https://s.shopee.vn/1gIY6nmuzC" },
+  { label: "Áo Hoodie Labubu (TikTok Shop)", url: "https://vt.tiktok.com/ZS9SCFP5o4k2A-ojHwW/" },
+  { label: "Máy Game Sup 400 (Shopee Web)", url: "https://shopee.vn/M%C3%A1y-Ch%C6%A1i-Game-Sup-400-Game-In-1-Retro-K%C3%A8m-Tay-C%E1%BA%A7m-Ch%C6%A1i-Game-2-Ng%C6%B0%E1%BB%9Di-i.63082962.1570701176" },
 ];
 
 export function EcommerceInfo() {
@@ -93,17 +93,22 @@ export function EcommerceInfo() {
     /shopee\.(vn|com)|shop\.tiktok\.com|tiktok\.com/i.test(u);
 
   const handleFetch = async () => {
-    if (!url.trim()) return;
+    const raw = url.trim();
+    if (!raw) return;
     setLoading(true);
     setError("");
     setBlocked(false);
     setResult(null);
 
+    // Extract link if text from mobile app was pasted
+    const match = raw.match(/https?:\/\/[^\s]+/);
+    const targetUrl = match ? match[0] : raw;
+
     try {
       const res = await fetch("/api/ecommerce", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ url: targetUrl }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -114,7 +119,7 @@ export function EcommerceInfo() {
       setActiveTab("desc");
     } catch (err: any) {
       setError(err.message || "Có lỗi xảy ra khi bóc tách dữ liệu.");
-      if (isBlockedPlatform(url)) setBlocked(true);
+      if (isBlockedPlatform(targetUrl)) setBlocked(true);
     } finally {
       setLoading(false);
     }
@@ -181,7 +186,7 @@ export function EcommerceInfo() {
           <div style={{ flex: 1, position: "relative" }}>
             <input
               type="text"
-              placeholder="Dán link sản phẩm Shopee hoặc TikTok Shop vào đây..."
+              placeholder="Dán link Shopee, TikTok Shop hoặc dán cả đoạn text chia sẻ từ app điện thoại vào đây..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleFetch()}

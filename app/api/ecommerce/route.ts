@@ -7,10 +7,11 @@ import { detectPlatform as detectSite } from "@/lib/platforms";
 
 // Detect platform from URL
 function detectPlatform(url: string): "shopee" | "tiktok_shop" | "lazada" | "unknown" {
-  if (url.includes("shopee.vn") || url.includes("shopee.com")) return "shopee";
+  if (url.includes("shopee.vn") || url.includes("shopee.com") || url.includes("shp.ee") || url.includes("s.shopee.vn")) return "shopee";
   if (
     url.includes("shop.tiktok.com") ||
-    (url.includes("tiktok.com") && (url.includes("/product") || url.includes("/pdp/")))
+    url.includes("vt.tiktok.com") ||
+    (url.includes("tiktok.com") && (url.includes("/product") || url.includes("/pdp/") || url.includes("/view/product")))
   )
     return "tiktok_shop";
   if (url.includes("lazada.vn") || url.includes("lazada.com")) return "lazada";
@@ -408,31 +409,163 @@ async function curlFallback(url: string, platform: string) {
   };
 }
 
+/** Extract product details via high-performance SpaiApps engine (handles Shopee, TikTok Shop, etc.) */
+async function extractViaSpaiApps(
+  targetUrl: string,
+  extraOg?: { title?: string; image?: string }
+): Promise<any | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+
+    const res = await fetch("https://tools.spaiauto.com/api.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Referer: "https://tools.spaiauto.com/",
+        Origin: "https://tools.spaiauto.com",
+        "User-Agent": UA_DESKTOP,
+      },
+      body: JSON.stringify({ action: "extract_product", url: targetUrl }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json.success || !json.data) return null;
+    const data = json.data;
+
+    const title = (data.title || "").trim() || extraOg?.title || "Sản phẩm";
+    let images: string[] = (data.images || []).filter(
+      (u: any) => typeof u === "string" && u.startsWith("http")
+    );
+    if (!images.length && extraOg?.image) {
+      images = [extraOg.image];
+    }
+    const videos: string[] = (data.videos || [])
+      .map((v: any) => (typeof v === "string" ? v : v?.url))
+      .filter((u: any) => typeof u === "string" && u.startsWith("http"));
+
+    const variants = (data.variations || []).map((v: any) => ({
+      name: v.group_name || v.name || "Phân loại",
+      options: (v.options || []).map((o: any) => ({
+        name: o.name,
+        image: o.image || undefined,
+      })),
+    }));
+
+    const price = data.price || data.original_price || "Xem trực tiếp trên sàn";
+
+    return {
+      platform: data.platform || "E-Commerce",
+      title,
+      price,
+      description: data.description || "",
+      images,
+      videos,
+      variants: variants.length ? variants : undefined,
+      shopName: data.shop_name || "",
+      location: data.shop_location || "",
+      source_url: data.product_url || targetUrl,
+    };
+  } catch (err) {
+    console.warn("[API/ecommerce] SpaiApps extract error:", err);
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   if (rateLimited(req, "ecommerce")) {
     return NextResponse.json({ error: "Bạn thao tác quá nhanh, vui lòng thử lại sau." }, { status: 429 });
   }
   try {
     const body = await req.json();
-    const { url } = body;
+    const rawInput = (body.url || "").trim();
 
-    if (!url || typeof url !== "string" || !url.trim()) {
+    if (!rawInput || typeof rawInput !== "string") {
       return NextResponse.json({ error: "Vui lòng cung cấp URL sản phẩm hợp lệ." }, { status: 400 });
     }
 
-    const safe = await assertPublicHttpUrl(url);
+    // Extract first URL if user pasted raw share text from mobile app
+    const urlMatch = rawInput.match(/https?:\/\/[^\s]+/);
+    const cleanUrl = urlMatch ? urlMatch[0] : rawInput;
+
+    const safe = await assertPublicHttpUrl(cleanUrl);
     console.log(`[API/ecommerce] Đang scrape: ${safe.href}`);
 
-    const platform = detectPlatform(safe.href);
+    let targetHref = safe.href;
+    const extraOg: { title?: string; image?: string } = {};
 
-    let result: any;
-    if (platform === "shopee") {
-      result = await scrapeShopee(safe.href);
-    } else if (platform === "tiktok_shop") {
-      result = await scrapeTikTokShop(safe.href);
-    } else {
-      const site = detectSite(safe.href);
-      result = await curlFallback(safe.href, site.id === "unknown" ? "E-Commerce" : site.name);
+    // If vt.tiktok.com, s.shopee.vn or shp.ee short link, inspect redirect for og_info
+    if (targetHref.includes("vt.tiktok.com") || targetHref.includes("s.shopee.vn") || targetHref.includes("shp.ee")) {
+      try {
+        const headRes = await fetch(targetHref, {
+          method: "GET",
+          redirect: "manual",
+          headers: { "User-Agent": UA_DESKTOP },
+        });
+        const loc = headRes.headers.get("location");
+        if (loc) {
+          targetHref = loc.startsWith("http") ? loc : new URL(loc, targetHref).href;
+          try {
+            const parsed = new URL(targetHref);
+            const ogStr = parsed.searchParams.get("og_info");
+            if (ogStr) {
+              const og = JSON.parse(ogStr);
+              if (og.title) extraOg.title = og.title;
+              if (og.image) extraOg.image = og.image.replace(/~tplv-[^?]+/, "");
+            }
+          } catch {}
+        }
+      } catch (err) {
+        console.warn("[API/ecommerce] Short link resolve error:", err);
+      }
+    }
+
+    // 1. Try high-performance SpaiApps engine first
+    let result = await extractViaSpaiApps(targetHref, extraOg);
+
+    // 2. If SpaiApps didn't get title or images, try platform-specific scrapers
+    if (!result || (!result.title && !result.images.length)) {
+      const platform = detectPlatform(targetHref);
+      try {
+        if (platform === "shopee") {
+          result = await scrapeShopee(targetHref);
+        } else if (platform === "tiktok_shop") {
+          result = await scrapeTikTokShop(targetHref);
+        } else {
+          const site = detectSite(targetHref);
+          result = await curlFallback(targetHref, site.id === "unknown" ? "E-Commerce" : site.name);
+        }
+      } catch (scrapingErr: any) {
+        // If TikTok was blocked by Security Check but we extracted og_info from the short link redirect:
+        if (extraOg.title) {
+          result = {
+            platform: "TikTok Shop",
+            title: extraOg.title,
+            price: "Xem trên TikTok Shop",
+            description: "",
+            images: extraOg.image ? [extraOg.image] : [],
+            videos: [],
+            source_url: targetHref,
+          };
+        } else {
+          throw scrapingErr;
+        }
+      }
+    }
+
+    // If still no title or images but we have extraOg:
+    if (result && !result.title && extraOg.title) {
+      result.title = extraOg.title;
+    }
+    if (result && (!result.images || !result.images.length) && extraOg.image) {
+      result.images = [extraOg.image];
+    }
+
+    if (!result || !result.title) {
+      throw new Error("Không thể trích xuất dữ liệu từ đường dẫn này. Vui lòng kiểm tra lại liên kết.");
     }
 
     // Route images through the signed media proxy to avoid hotlink blocking

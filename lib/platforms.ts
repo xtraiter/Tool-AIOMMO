@@ -23,8 +23,8 @@ const RULES: Rule[] = [
   { id: "twitch", name: "Twitch", domains: ["twitch.tv"] },
   { id: "dailymotion", name: "Dailymotion", domains: ["dailymotion.com", "dai.ly"] },
   { id: "tumblr", name: "Tumblr", domains: ["tumblr.com"] },
-  { id: "shopee", name: "Shopee", domains: ["shopee.vn", "shopee.com", "shp.ee"] },
-  { id: "tiktokshop", name: "TikTok Shop", domains: ["shop.tiktok.com"] },
+  { id: "shopee", name: "Shopee", referer: "https://shopee.vn/", domains: ["shopee.vn", "shopee.com", "shp.ee", "susercontent.com"] },
+  { id: "tiktokshop", name: "TikTok Shop", referer: "https://shop.tiktok.com/", domains: ["shop.tiktok.com", "ibyteimg.com", "tiktokcdn.com", "tiktokcdn-us.com"] },
 ];
 
 /** Platforms yt-dlp has no extractor for; links are recognised but need a custom scraper. */
