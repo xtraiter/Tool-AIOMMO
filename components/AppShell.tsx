@@ -15,9 +15,13 @@ import {
   Music,
   ImageIcon,
   Briefcase,
-  RotateCcw
+  RotateCcw,
+  ArrowLeft,
+  ChevronRight,
+  Home
 } from "lucide-react";
-import { visibleNavFeatures, NAV_CATEGORY_ORDER, type AppFeature } from "@/lib/features";
+import { visibleNavFeatures, NAV_CATEGORY_ORDER, featureBySlug, isExternalFeature, type AppFeature } from "@/lib/features";
+import type { NavSource } from "@/lib/analytics/types";
 import { badgeLabel, categoryLabel, featureDescription, featureName, useUiPreferences } from "@/lib/uiPreferences";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 import { getToolIcon, colorForSlug } from "@/components/toolIconMap";
@@ -43,13 +47,21 @@ const CATEGORY_COLOR: Record<string, string> = {
 type Props = {
   features: AppFeature[];
   activeSlug: string;
-  onSelect: (slug: string) => void;
+  /** Opens a tool by slug ("" = homepage); `source` records which UI was used. */
+  onSelect: (slug: string, source: NavSource) => void;
+  /** Provided only while a tool is open: steps back through the navigation stack. */
+  onBack?: () => void;
   /** Provided only while a tool is open: resets that tool to its initial state. */
   onRefresh?: () => void;
   children: React.ReactNode;
 };
 
-export function AppShell({ features, activeSlug, onSelect, onRefresh, children }: Props) {
+/** Let ctrl/cmd/shift/middle-click keep the browser's "open in new tab" behaviour. */
+function isPlainLeftClick(e: React.MouseEvent) {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
+
+export function AppShell({ features, activeSlug, onSelect, onBack, onRefresh, children }: Props) {
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ left: number; top: number } | null>(null);
   const [mobileSheetCategory, setMobileSheetCategory] = useState<string | null>(null);
@@ -94,7 +106,9 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
       const target = e.target as Node;
       const insideBar = barRef.current?.contains(target);
       const insideDropdown = dropdownRef.current?.contains(target);
-      if (!insideBar && !insideDropdown) {
+      // The breadcrumb's category button toggles the dropdown itself.
+      const onAnchor = (target as Element).closest?.("[data-dropdown-anchor]");
+      if (!insideBar && !insideDropdown && !onAnchor) {
         closeDropdown();
       }
     }
@@ -111,8 +125,8 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
     };
   }, [closeDropdown]);
 
-  function openCategoryDropdown(category: string) {
-    const btn = btnRefs.current[category];
+  function openCategoryDropdown(category: string, anchor?: HTMLElement) {
+    const btn = anchor ?? btnRefs.current[category];
     const barRect = barRef.current?.getBoundingClientRect();
     if (btn && barRect) {
       const rect = btn.getBoundingClientRect();
@@ -123,7 +137,7 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
       }
       // Anchor to the nav bar's own bottom edge (not the button's), so the
       // dropdown never jumps vertically when switching between categories.
-      setDropdownPos({ left, top: barRect.bottom });
+      setDropdownPos({ left, top: anchor ? rect.bottom + 6 : barRect.bottom });
     }
     setOpenCategory(category);
   }
@@ -158,13 +172,36 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
   });
 
-  function handleItemClick(feature: AppFeature) {
-    const isExternal = /^https?:\/\//i.test(feature.route_path ?? "");
-    if (!isExternal) {
-      onSelect(feature.slug);
-    }
+  function handleItemClick(e: React.MouseEvent, feature: AppFeature, source: NavSource) {
+    if (!isPlainLeftClick(e)) return;
+    e.preventDefault();
+    onSelect(feature.slug, source);
     closeDropdown();
     closeMobileSheet();
+  }
+
+  function goHome(e: React.MouseEvent) {
+    if (!isPlainLeftClick(e)) return;
+    e.preventDefault();
+    closeDropdown();
+    closeMobileSheet();
+    onSelect("", "crumb");
+  }
+
+  const activeFeature = featureBySlug(activeSlug);
+  const activeCategory = activeFeature?.category ?? "";
+
+  // Breadcrumb category: shows the sibling tools of the open one (dropdown on
+  // desktop, bottom sheet on phones) for quick switching.
+  function openCrumbCategory(e: React.MouseEvent<HTMLButtonElement>) {
+    if (!activeCategory) return;
+    if (window.matchMedia("(max-width: 640px)").matches) {
+      openMobileSheet(activeCategory);
+    } else if (openCategory === activeCategory) {
+      closeDropdown();
+    } else {
+      openCategoryDropdown(activeCategory, e.currentTarget);
+    }
   }
 
   function openMobileSheet(category: string) {
@@ -199,9 +236,9 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mobileSheetCategory]);
 
-  function renderCategoryItem(feature: AppFeature, onDone: () => void) {
+  function renderCategoryItem(feature: AppFeature, onDone: () => void, source: NavSource) {
     const Icon = getToolIcon(feature.icon_name);
-    const isExternal = /^https?:\/\//i.test(feature.route_path ?? "");
+    const isExternal = isExternalFeature(feature);
     const isPremium = isExternal;
     const content = (
       <>
@@ -225,9 +262,12 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
       );
     }
     return (
-      <button key={feature.slug} type="button" className="tn-item" onClick={() => handleItemClick(feature)}>
+      <a key={feature.slug} className={`tn-item ${feature.slug === activeSlug ? "is-current" : ""}`}
+        href={feature.route_path ?? "/"} aria-current={feature.slug === activeSlug ? "page" : undefined}
+        data-track={`Menu: ${feature.name}`}
+        onClick={(e) => handleItemClick(e, feature, source)}>
         {content}
-      </button>
+      </a>
     );
   }
 
@@ -235,7 +275,7 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
     <div className="tn-shell" data-ui-theme={theme} data-ui-locale={locale}>
       <ParticleBackground />
       <div className="tn-bar" ref={barRef}>
-        <a className="tn-brand" href="/">
+        <a className="tn-brand" href="/" onClick={goHome}>
           <img src="/company/logo.png" alt="" />
           <span>
             AIOMMO Studio
@@ -253,7 +293,7 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
                 <button
                   type="button"
                   ref={(el) => { btnRefs.current[category] = el; }}
-                  className={`tn-cat-btn ${isOpen ? "is-open" : ""}`}
+                  className={`tn-cat-btn ${isOpen ? "is-open" : ""} ${category === activeCategory ? "is-current" : ""}`}
                   onClick={() => toggleCategory(category)}
                   onMouseEnter={() => onCategoryHover(category)}
                   style={{ ["--cat-color" as string]: catColor }}
@@ -275,7 +315,7 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
           >
             {grouped[openCategory]
               .sort((a, b) => a.sort_order - b.sort_order)
-              .map((feature) => renderCategoryItem(feature, closeDropdown))}
+              .map((feature) => renderCategoryItem(feature, closeDropdown, "menu"))}
           </div>,
           document.body
         )}
@@ -292,7 +332,7 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
               <div className="tn-sheet-list">
                 {(grouped[mobileSheetCategory] ?? [])
                   .sort((a, b) => a.sort_order - b.sort_order)
-                  .map((feature) => renderCategoryItem(feature, closeMobileSheet))}
+                  .map((feature) => renderCategoryItem(feature, closeMobileSheet, "sheet"))}
               </div>
             </div>
           </>,
@@ -339,12 +379,49 @@ export function AppShell({ features, activeSlug, onSelect, onRefresh, children }
         </div>
       </div>
 
-      <div className="tn-content">{children}</div>
+      <div className="tn-content">
+        {onBack && activeFeature && (
+          <div className="tn-crumbs">
+            <button type="button" className="tn-back-btn" onClick={onBack} data-track="Quay lại">
+              <ArrowLeft size={16} />
+              <span>{locale === "en" ? "Back" : "Quay lại"}</span>
+            </button>
+            <nav className="tn-crumb-trail" aria-label={locale === "en" ? "Breadcrumb" : "Đường dẫn"}>
+              <a href="/" className="tn-crumb tn-crumb-home" onClick={goHome}>
+                <Home size={14} />
+                <span>{locale === "en" ? "Home" : "Trang chủ"}</span>
+              </a>
+              <ChevronRight size={14} className="tn-crumb-sep tn-crumb-home" />
+              <button type="button" className="tn-crumb" onClick={openCrumbCategory} data-dropdown-anchor
+                style={{ ["--cat-color" as string]: CATEGORY_COLOR[activeCategory] ?? "var(--accent)" }}>
+                {categoryLabel(activeCategory, locale)}
+                <ChevronDown size={13} />
+              </button>
+              <ChevronRight size={14} className="tn-crumb-sep" />
+              <span className="tn-crumb tn-crumb-current" aria-current="page">
+                {featureName(activeFeature.slug, activeFeature.name, locale)}
+              </span>
+            </nav>
+          </div>
+        )}
+        {children}
+      </div>
 
       <nav className="tn-mobile-tabbar" ref={tabbarRef}>
+        <a
+          href="/"
+          className={`tn-mobile-tab ${!activeSlug && !mobileSheetCategory ? "is-active" : ""}`}
+          onClick={goHome}
+          aria-label={locale === "en" ? "Home" : "Trang chủ"}
+          aria-current={!activeSlug ? "page" : undefined}
+          style={{ ["--tab-color" as string]: "var(--accent)" }}
+        >
+          <span className="tn-mobile-tab-icon"><Home size={19} /></span>
+          <span className="tn-mobile-tab-dot" />
+        </a>
         {sortedCategories.map((category) => {
           const Icon = CATEGORY_ICON[category] ?? Folder;
-          const isActive = mobileSheetCategory === category;
+          const isActive = mobileSheetCategory ? mobileSheetCategory === category : category === activeCategory;
           return (
             <button
               key={category}
