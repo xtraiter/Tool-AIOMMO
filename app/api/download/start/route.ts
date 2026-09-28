@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     const dir = await mkdtemp(path.join(tmpdir(), "aiommo-dl-"));
     job.dir = dir;
 
-    const common = ["--no-playlist", "--no-warnings", "--max-filesize", "300M", "-o", path.join(dir, "media.%(ext)s"), "--print-to-file", "%(title)s", path.join(dir, "title.txt")];
+    const common = ["--no-playlist", "--no-warnings", "--max-filesize", "2000M", "-o", path.join(dir, "media.%(ext)s"), "--print-to-file", "%(title)s", path.join(dir, "title.txt")];
     const options = isAudio
       ? [...common, "-f", "ba/b", "-x", "--audio-format", type, ...(LOSSLESS.has(type) ? [] : ["--audio-quality", `${bitrate}K`])]
       : [
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
           job.stage = p.stage;
         });
         const file = (await readdir(dir)).find((f) => f === `media.${type}`);
-        if (!file) throw new Error("Không tạo được file. Có thể vượt quá 300MB.");
+        if (!file) throw new Error("Không tạo được file. Có thể file gốc vượt quá giới hạn dung lượng tải (2GB).");
         const title = await readFile(path.join(dir, "title.txt"), "utf8").catch(() => "");
         job.file = path.join(dir, file);
         job.size = (await stat(job.file)).size;

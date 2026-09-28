@@ -39,3 +39,10 @@ Thumbs.db
 
 # onnxruntime-web runtime copied by scripts/copy-ort.js
 public/ort/
+
+# Standalone desktop apps
+dola-farm-app/
+
+
+# Self-hosted analytics data (lib/analytics/store.ts)
+data/

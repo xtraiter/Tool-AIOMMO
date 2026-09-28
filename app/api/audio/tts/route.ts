@@ -1,50 +1,65 @@
 import { NextResponse } from "next/server";
+import { execFile } from "child_process";
+import { mkdtemp, rm, writeFile, readFile } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import { rateLimited } from "@/lib/rateLimit";
+
+function execPromise(command: string, args: string[], options: { cwd?: string, timeout?: number } = {}) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile(command, args, options, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`Command failed: ${stderr || error.message}`));
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+  });
+}
 
 export async function POST(req: Request) {
+  if (rateLimited(req as any, "tts", 10)) {
+    return NextResponse.json({ error: "Bạn thao tác quá nhanh, vui lòng thử lại sau." }, { status: 429 });
+  }
+
+  let tempDir: string | undefined;
+
   try {
     const body = await req.json();
-    const { text, voiceId } = body;
+    const { text, voiceId, resourceId, speed } = body;
 
     if (!text) {
       return NextResponse.json({ error: "Văn bản không được để trống" }, { status: 400 });
     }
 
-    // Địa chỉ server API Wrapper mã nguồn mở (ví dụ: K07VN hoặc kuwacom)
-    // Nếu bạn cài đặt server local hoặc vps, hãy cấu hình ở file .env
-    const ttsApiUrl = process.env.CAPCUT_TTS_API_URL;
+    const safeVoiceId = voiceId || "BV075_streaming";
+    const safeResourceId = resourceId || "7102355709945188865";
+    const safeSpeed = speed ? String(speed) : "1.0";
 
-    if (!ttsApiUrl) {
-      return NextResponse.json(
-        { 
-          error: "Tính năng chưa được cấu hình Backend. Vui lòng thiết lập biến môi trường CAPCUT_TTS_API_URL trỏ tới server API của bạn." 
-        },
-        { status: 501 }
-      );
-    }
+    tempDir = await mkdtemp(path.join(tmpdir(), "aio-tts-"));
+    const textPath = path.join(tempDir, "input.txt");
+    const outPath = path.join(tempDir, "output.mp3");
+    
+    await writeFile(textPath, text, "utf8");
 
-    // Format request payload tùy thuộc vào server Wrapper bạn đang sử dụng
-    // Dưới đây là ví dụ payload chung chung, bạn có thể cần chỉnh sửa lại theo cấu trúc của repo bạn chọn.
-    const requestBody = {
-      text: text,
-      speaker: voiceId || "v_nam_1",
-    };
+    const pythonScript = path.join(process.cwd(), "lib", "python", "capcut_tts.py");
 
-    const response = await fetch(ttsApiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
+    await execPromise("python3", [
+      pythonScript,
+      textPath,
+      outPath,
+      safeVoiceId,
+      safeResourceId,
+      safeSpeed
+    ], { 
+      cwd: tempDir, 
+      timeout: 180000 // 3 phút timeout
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Lỗi từ TTS Server:", errText);
-      return NextResponse.json({ error: "Lỗi từ server xử lý giọng nói." }, { status: response.status });
-    }
+    const audioBuffer = await readFile(outPath);
 
-    // Giả sử API trả về trực tiếp file âm thanh (audio/mpeg)
-    const audioBuffer = await response.arrayBuffer();
+    await rm(tempDir, { recursive: true, force: true });
+    tempDir = undefined;
 
     return new NextResponse(audioBuffer, {
       status: 200,
@@ -55,7 +70,10 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    console.error("Lỗi API TTS:", error);
-    return NextResponse.json({ error: "Lỗi máy chủ nội bộ" }, { status: 500 });
+    console.error("[API/tts] Error:", error);
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+    return NextResponse.json({ error: "Không tạo được giọng nói: " + (error.message || "Unknown error") }, { status: 500 });
   }
 }

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { permanentRedirect } from "next/navigation";
 import PortalPage from "@/components/PortalPage";
+import { featureBySlug, pathForSlug } from "@/lib/features";
 
 export const metadata: Metadata = {
   title: "AIOMMO Studio · Công cụ Video & Âm thanh miễn phí",
@@ -13,5 +15,7 @@ type Props = {
 
 export default async function HomePage({ searchParams }: Props) {
   const params = await searchParams;
-  return <PortalPage initialSlug={params.tool} />;
+  // Old links (/?tool=video.cut) move to the short path (/cat-video).
+  if (featureBySlug(params.tool)) permanentRedirect(pathForSlug(params.tool));
+  return <PortalPage />;
 }

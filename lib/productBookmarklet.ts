@@ -27,7 +27,7 @@ if(txt.length>o.description.length)o.description=txt.replace(/^(mô tả sản p
 if(!o.price){var m=(d.body.innerText||"").match(/₫\s?[\d.,]+(\s?-\s?₫?\s?[\d.,]+)?|[\d.,]+\s?₫/);if(m)o.price=m[0].trim();}
 o.images=o.images.slice(0,40);o.videos=o.videos.slice(0,10);o.source=location.href;
 var j=JSON.stringify(o),b=btoa(unescape(encodeURIComponent(j)));
-window.open("__ORIGIN__/app?tool=premium.product.info#data="+b,"_blank");
+window.open("__ORIGIN__/lay-san-pham#data="+b,"_blank");
 })();`;
 
 export function buildBookmarklet(origin: string): string {

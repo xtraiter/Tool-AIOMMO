@@ -1,8 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowRight, ArrowUpRight, Search, Crown } from "lucide-react";
-import { DEFAULT_LOCAL_FEATURES, NAV_CATEGORY_ORDER, type AppFeature } from "@/lib/features";
+import { useEffect, useMemo, useState } from "react";
+
+import { ArrowRight, ArrowUpRight, Search, Crown, Eye, UserPlus } from "lucide-react";
+import { DEFAULT_LOCAL_FEATURES, NAV_CATEGORY_ORDER, isExternalFeature, type AppFeature } from "@/lib/features";
+import { companyRegisterUrl } from "@/features/company/companyLinks";
+import { trackSearch } from "@/lib/analytics/client";
+import type { NavSource } from "@/lib/analytics/types";
 import { getToolIcon, colorForSlug } from "@/components/toolIconMap";
 import {
   badgeLabel,
@@ -15,33 +19,38 @@ import {
 } from "@/lib/uiPreferences";
 import "./landing.css";
 
-function isExternalTool(feature: AppFeature) {
-  return /^https?:\/\//i.test(feature.route_path ?? "");
-}
+const isExternalTool = isExternalFeature;
+
+type SelectTool = (slug: string, source: NavSource) => void;
 
 function ToolCard({
   feature,
   locale,
+  source,
   onSelectTool
 }: {
   feature: AppFeature;
   locale: UiLocale;
-  onSelectTool?: (slug: string) => void;
+  source: NavSource;
+  onSelectTool?: SelectTool;
 }) {
   const Icon = getToolIcon(feature.icon_name);
   const external = isExternalTool(feature);
-  const href = external ? (feature.route_path ?? "#") : `/app?tool=${feature.slug}`;
+  const href = feature.route_path ?? "/";
 
   return (
     <a
       className={`tl-card is-active ${external ? "is-premium-card" : ""}`}
       href={href}
+      data-track={`Thẻ: ${feature.name}`}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
       onClick={(e) => {
         if (external || !onSelectTool) return;
+        // Keep ctrl/cmd/middle-click "open in new tab" working.
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
-        onSelectTool(feature.slug);
+        onSelectTool(feature.slug, source);
       }}
     >
       {feature.badge && (
@@ -65,7 +74,41 @@ function ToolCard({
   );
 }
 
-export function ToolsLandingPage({ onSelectTool }: { onSelectTool?: (slug: string) => void } = {}) {
+const numberFormat = new Intl.NumberFormat("vi-VN");
+
+/** Footer traffic counters, refreshed every 30s from /api/stats. */
+function SiteTraffic({ locale }: { locale: UiLocale }) {
+  const [stats, setStats] = useState<{ totalVisits: number; online: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/stats", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (!cancelled && data) setStats(data); })
+        .catch(() => {});
+    load();
+    const timer = window.setInterval(load, 30_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+
+  const fmt = (n: number | undefined) => (n === undefined ? "—" : numberFormat.format(n));
+  return (
+    <div className="tl-traffic" aria-live="polite">
+      <span className="tl-traffic-item">
+        <Eye size={14} />
+        {locale === "en" ? "Total visits" : "Tổng lượt truy cập"}: <b>{fmt(stats?.totalVisits)}</b>
+      </span>
+      <span className="tl-traffic-item">
+        <span className="tl-online-dot" aria-hidden />
+        {/* The person reading this is online too, even before their first ping lands. */}
+        {locale === "en" ? "Online now" : "Đang truy cập"}: <b>{fmt(stats && Math.max(1, stats.online))}</b>
+      </span>
+    </div>
+  );
+}
+
+export function ToolsLandingPage({ onSelectTool }: { onSelectTool?: SelectTool } = {}) {
   const [query, setQuery] = useState("");
   const { locale } = useUiPreferences();
 
@@ -102,6 +145,15 @@ export function ToolsLandingPage({ onSelectTool }: { onSelectTool?: (slug: strin
   }, [grouped, normalizedQuery, locale]);
 
   const visibleCategories = categories.filter((c) => filteredGrouped[c]?.length);
+  const resultCount = visibleCategories.reduce((n, c) => n + filteredGrouped[c].length, 0);
+
+  // Record what people search for once they stop typing — searches with no
+  // result show up on /thong-ke as ideas for new tools.
+  useEffect(() => {
+    if (normalizedQuery.length < 2) return;
+    const timer = window.setTimeout(() => trackSearch(normalizedQuery, resultCount), 1200);
+    return () => window.clearTimeout(timer);
+  }, [normalizedQuery, resultCount]);
   const totalFree = DEFAULT_LOCAL_FEATURES.filter((f) => !isExternalTool(f)).length;
 
   const t = locale === "en"
@@ -115,6 +167,7 @@ export function ToolsLandingPage({ onSelectTool }: { onSelectTool?: (slug: strin
         toolsSuffix: "tools",
         noResults: "No matching tools found.",
         allApps: "All apps",
+        register: "Register now",
         footerTagline: "Free online tools, processed instantly right in your browser."
       }
     : {
@@ -127,6 +180,7 @@ export function ToolsLandingPage({ onSelectTool }: { onSelectTool?: (slug: strin
         toolsSuffix: "công cụ",
         noResults: "Không tìm thấy công cụ phù hợp.",
         allApps: "Tất cả ứng dụng",
+        register: "Đăng ký ngay",
         footerTagline: "Công cụ trực tuyến miễn phí, xử lý ngay trên trình duyệt của bạn."
       };
 
@@ -152,6 +206,12 @@ export function ToolsLandingPage({ onSelectTool }: { onSelectTool?: (slug: strin
         </h1>
         <p>{t.heroP}</p>
 
+        <div className="tl-hero-actions tl-hero-register">
+          <a className="tl-btn-primary" href={companyRegisterUrl("app")} data-track="Đăng ký ngay (hero)">
+            <UserPlus size={18} /> {t.register} <ArrowUpRight size={16} />
+          </a>
+        </div>
+
         <div className="tl-search">
           <Search size={16} />
           <input
@@ -176,14 +236,20 @@ export function ToolsLandingPage({ onSelectTool }: { onSelectTool?: (slug: strin
       )}
 
       {visibleCategories.map((category) => (
-        <section className="tl-section" key={category}>
+        <section className="tl-section" id={category} key={category}>
           <div className="tl-section-title">
             <h2>{sectionTitle(category, locale)}</h2>
             <span className="tl-count">{filteredGrouped[category].length} {t.toolsSuffix}</span>
           </div>
           <div className="tl-grid">
             {filteredGrouped[category].map((feature) => (
-              <ToolCard key={feature.slug} feature={feature} locale={locale} onSelectTool={onSelectTool} />
+              <ToolCard
+                key={feature.slug}
+                feature={feature}
+                locale={locale}
+                source={normalizedQuery ? "search" : "card"}
+                onSelectTool={onSelectTool}
+              />
             ))}
           </div>
         </section>
@@ -193,9 +259,10 @@ export function ToolsLandingPage({ onSelectTool }: { onSelectTool?: (slug: strin
         <div className="tl-footer-nav">
           <span className="tl-footer-nav-title">{t.allApps}</span>
           {NAV_CATEGORY_ORDER.map((category) => (
-            <a key={category} href={`/app`}>{categoryLabel(category, locale)}</a>
+            <a key={category} href={`#${category}`}>{categoryLabel(category, locale)}</a>
           ))}
         </div>
+        <SiteTraffic locale={locale} />
         <div className="tl-footer-bottom">
           <span>© {new Date().getFullYear()} AIOMMO Studio · All In One MMO</span>
           <span>{t.footerTagline}</span>
