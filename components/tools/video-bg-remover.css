@@ -1,0 +1,82 @@
+.vbr-stage { margin: 12px 0 4px; }
+.vbr-video, .vbr-live {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 12px;
+  background-color: #000;
+}
+.vbr-live { background-color: transparent; margin: 0 auto; width: auto; max-width: 100%; }
+.vbr-video.bgr-checker { background-color: transparent; }
+
+.vbr-section { margin-top: 18px; }
+.vbr-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.vbr-trim {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr) auto);
+  gap: 10px;
+  align-items: end;
+}
+.vbr-trim .tool-btn { padding: 9px 12px; font-size: 12.5px; white-space: nowrap; }
+
+.vbr-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.vbr-note.is-warn { color: var(--danger, #ef4444); }
+
+.vbr-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.vbr-bg { margin-top: 12px; }
+.vbr-swatch { width: 16px; height: 16px; border-radius: 4px; display: inline-block; }
+.vbr-small { padding: 6px 10px; font-size: 12.5px; }
+
+.vbr-formats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.vbr-format {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2, var(--panel));
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.vbr-format:hover:not(:disabled) { border-color: var(--accent); }
+.vbr-format.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel-2, var(--panel)));
+}
+.vbr-format strong { font-size: 13.5px; }
+.vbr-format small { font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+.vbr-result { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.vbr-result .tool-btn { align-self: flex-start; }
+
+@media (max-width: 640px) {
+  .vbr-trim { grid-template-columns: minmax(0, 1fr) auto; }
+}
+
+/* `hidden` must win over the display rules above. */
+.vbr-stage [hidden] { display: none; }

@@ -26,6 +26,7 @@ import { badgeLabel, categoryLabel, featureDescription, featureName, useUiPrefer
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 import { getToolIcon, colorForSlug } from "@/components/toolIconMap";
 import { ParticleBackground } from "@/features/landing/ParticleBackground";
+import { FileDropGuard } from "@/components/FileDropGuard";
 import "./topnav.css";
 
 const CATEGORY_ICON: Record<string, any> = {
@@ -274,6 +275,7 @@ export function AppShell({ features, activeSlug, onSelect, onBack, onRefresh, ch
   return (
     <div className="tn-shell" data-ui-theme={theme} data-ui-locale={locale}>
       <ParticleBackground />
+      <FileDropGuard />
       <div className="tn-bar" ref={barRef}>
         <a className="tn-brand" href="/" onClick={goHome}>
           <img src="/company/logo.png" alt="" />

@@ -134,6 +134,17 @@ const VIDEO_FEATURES: AppFeature[] = [
     badge: "AI ENGINE"
   },
   {
+    slug: "video.bgremover",
+    name: "Xóa Nền Video AI",
+    description: "Tách người / vật thể khỏi nền video bằng AI, xuất WebM & MOV nền trong suốt, WebP động, GIF hoặc MP4 phông xanh.",
+    category: "video",
+    route_path: "/xoa-nen-video",
+    icon_name: "film",
+    sort_order: 55,
+    is_admin_only: false,
+    badge: "MỚI"
+  },
+  {
     slug: "video.timeline",
     name: "Trình Dựng Video Timeline",
     description: "Dựng video đa rãnh: ghép nhiều clip/ảnh, chèn nhạc nền, lồng chữ phụ đề, kết xuất MP4.",

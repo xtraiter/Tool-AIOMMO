@@ -222,7 +222,7 @@ export function FileConverter({ initialTab }: { initialTab?: ModeId }) {
 
       <div className="tool-card">
         <div
-          className={`tool-dropzone${drag ? " is-over" : ""}`}
+          className={`tool-dropzone${drag ? " is-dragover" : ""}`}
           onClick={() => inputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}

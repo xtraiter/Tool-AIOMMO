@@ -22,6 +22,7 @@ const LazyScreenRecorder = dynamic(() => import("@/components/tools/ScreenRecord
 const LazyZipExtractor = dynamic(() => import("@/components/tools/ZipExtractor").then((m) => ({ default: m.ZipExtractor })), { ssr: false });
 const LazyVideoTimeline = dynamic(() => import("@/components/tools/VideoTimeline").then((m) => ({ default: m.VideoTimeline })), { ssr: false });
 const LazyWatermarkRemover = dynamic(() => import("@/components/tools/WatermarkRemover").then((m) => ({ default: m.WatermarkRemover })), { ssr: false });
+const LazyVideoBgRemover = dynamic(() => import("@/components/tools/VideoBgRemover").then((m) => ({ default: m.VideoBgRemover })), { ssr: false });
 const LazyBackgroundRemover = dynamic(() => import("@/components/tools/BackgroundRemover").then((m) => ({ default: m.BackgroundRemover })), { ssr: false });
 const LazySubtitleGenerator = dynamic(() => import("@/components/tools/SubtitleGenerator").then((m) => ({ default: m.SubtitleGenerator })), { ssr: false });
 const LazyFileConverter = dynamic(() => import("@/components/tools/FileConverter").then((m) => ({ default: m.FileConverter })), { ssr: false });
@@ -148,15 +149,17 @@ export default function PortalPage() {
     const hasSubtitle = activeSlug === "premium.video.subtitle";
     const hasWatermark = activeSlug === "premium.watermark.remover";
     const hasBgRemover = activeSlug === "image.bgremover";
+    const hasVideoBgRemover = activeSlug === "video.bgremover";
 
     const showNone = !hasVideoCut && !hasVideoJoin && !hasVideoScreenrecord && !hasAudioCut && !hasAudioExtract
       && !hasAudioVolume && !hasAudioRecord && !hasUtilityZip && !hasVideoTimeline
-      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo && !hasAudioTTS && !hasWatermark && !hasSubtitle && !hasConvert && !hasConvertVideo && !hasConvertImage && !hasConvertAudio && !hasBgRemover;
+      && !hasVocalSeparator && !hasMultiDownloader && !hasAlbumDownloader && !hasBulkScanner && !hasEcommerceInfo && !hasAudioTTS && !hasWatermark && !hasSubtitle && !hasConvert && !hasConvertVideo && !hasConvertImage && !hasConvertAudio && !hasBgRemover && !hasVideoBgRemover;
 
     if (hasAudioTTS) return <LazyAudioTTS />;
     if (hasSubtitle) return <LazySubtitleGenerator />;
     if (hasWatermark) return <LazyWatermarkRemover />;
     if (hasBgRemover) return <LazyBackgroundRemover />;
+    if (hasVideoBgRemover) return <LazyVideoBgRemover />;
     if (hasVideoCut) return <LazyVideoCutter />;
     if (hasVideoJoin) return <LazyVideoJoiner />;
     if (hasVideoScreenrecord) return <LazyScreenRecorder />;
