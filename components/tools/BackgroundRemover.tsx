@@ -49,7 +49,7 @@ export function BackgroundRemover() {
   const [error, setError] = useState("");
   const [progressText, setProgressText] = useState("");
   const [progress, setProgress] = useState(0);
-  const [tierId, setTierId] = useState<BgTierId>("light");
+  const [tierId, setTierId] = useState<BgTierId>("balanced");
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [hasProcessed, setHasProcessed] = useState(false);
 
@@ -75,7 +75,7 @@ export function BackgroundRemover() {
   const lastPos = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    setSaved(Object.fromEntries(BG_TIERS.map((t) => [t.id, t.isLocalDefault || flagged(t.id)])));
+    setSaved(Object.fromEntries(BG_TIERS.map((t) => [t.id, flagged(t.id)])));
   }, []);
 
   // Render composite to display canvas
@@ -404,7 +404,7 @@ export function BackgroundRemover() {
             </h2>
             <div className="asr-tiers" role="radiogroup" aria-label={tr("Chọn mô hình", "Choose a model")}>
               {BG_TIERS.map((t) => {
-                const isSaved = t.isLocalDefault || saved[t.id];
+                const isSaved = saved[t.id];
                 return (
                   <button
                     key={t.id}

@@ -46,3 +46,6 @@ dola-farm-app/
 
 # Self-hosted analytics data (lib/analytics/store.ts)
 data/
+
+# Python venv for server-side helpers (pdf2docx): python3 -m venv .venv && .venv/bin/pip install pdf2docx
+.venv/

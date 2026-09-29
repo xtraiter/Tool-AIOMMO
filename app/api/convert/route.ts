@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdtemp, rm, writeFile, readdir, readFile } from "fs/promises";
+import { access, mkdtemp, rm, writeFile, readdir, readFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { execFile } from "child_process";
@@ -15,6 +15,40 @@ function execPromise(command: string, args: string[], options: { cwd?: string, t
       }
     });
   });
+}
+
+// LibreOffice can't run two conversions at once on the same user profile: the
+// second call silently produces no file. Run them one after another.
+const g = globalThis as unknown as { __libreofficeQueue?: Promise<unknown> };
+
+function runSerialized<T>(task: () => Promise<T>): Promise<T> {
+  const next = (g.__libreofficeQueue ?? Promise.resolve()).then(task, task);
+  g.__libreofficeQueue = next.catch(() => {});
+  return next;
+}
+
+// PDF → Word uses pdf2docx (real paragraphs & tables) from the project venv;
+// LibreOffice's PDF import is the fallback (text boxes, but always available).
+const VENV_PYTHON = path.join(/*turbopackIgnore: true*/ process.cwd(), ".venv", "bin", "python");
+const PDF_TO_DOCX_SCRIPT = path.join(/*turbopackIgnore: true*/ process.cwd(), "lib", "python", "pdf_to_docx.py");
+
+class EncryptedPdfError extends Error {}
+
+async function pdfToDocxWithPdf2docx(inputPath: string, outputPath: string): Promise<boolean> {
+  try {
+    await access(VENV_PYTHON);
+  } catch {
+    return false;
+  }
+  try {
+    await execPromise(VENV_PYTHON, [PDF_TO_DOCX_SCRIPT, inputPath, outputPath], { timeout: 120000 });
+    return true;
+  } catch (error: any) {
+    await rm(outputPath, { force: true }).catch(() => {});
+    if (error?.code === 2) throw new EncryptedPdfError("Tệp PDF có mật khẩu, vui lòng bỏ mật khẩu rồi thử lại.");
+    console.error("[API/convert] pdf2docx failed, falling back to LibreOffice:", String(error?.stderr || error?.message || error).slice(0, 500));
+    return false;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -54,25 +88,31 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(inputPath, buffer);
 
-    // Chạy libreoffice headless
-    // Ví dụ: libreoffice --headless --convert-to pdf input.docx --outdir /tmp/dir
-    await execPromise("libreoffice", [
-      "--headless", 
+    // PDF → Word: pdf2docx trước; nếu không được thì dùng LibreOffice.
+    // LibreOffice mở PDF bằng Draw (không có bộ xuất Word) → phải ép mở bằng Writer.
+    const isPdfToWord = ext.toLowerCase() === ".pdf" && targetFormat === "docx";
+    const workDir = tempDir;
+    const converted = isPdfToWord
+      && await runSerialized(() => pdfToDocxWithPdf2docx(inputPath, path.join(workDir, "output.docx")));
+    const { stdout, stderr } = converted ? { stdout: "", stderr: "" } : await runSerialized(() => execPromise("libreoffice", [
+      "--headless",
       "--nologo",
       "--nofirststartwizard",
-      "--convert-to", targetFormat,
+      ...(isPdfToWord ? ["--infilter=writer_pdf_import"] : []),
+      "--convert-to", isPdfToWord ? "docx:MS Word 2007 XML" : targetFormat,
       inputPath,
-      "--outdir", tempDir
-    ], { 
-      cwd: tempDir, 
-      timeout: 60000 // 60s timeout
-    });
+      "--outdir", workDir
+    ], {
+      cwd: workDir,
+      timeout: 120000 // 120s timeout
+    }));
 
     // Lấy file kết quả
     const files = await readdir(tempDir);
     const resultFile = files.find(f => f !== safeName && f.endsWith("." + targetFormat));
 
     if (!resultFile) {
+      console.error("[API/convert] LibreOffice produced no file:", (stderr || stdout).trim().slice(0, 500));
       throw new Error("Không tìm thấy file kết quả sau khi convert.");
     }
 
@@ -98,6 +138,9 @@ export async function POST(req: NextRequest) {
     console.error("[API/convert] Error:", error);
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+    if (error instanceof EncryptedPdfError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     return NextResponse.json({ error: "Chuyển đổi thất bại: " + (error.message || "Unknown error") }, { status: 500 });
   }
