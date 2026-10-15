@@ -57,3 +57,10 @@ tools/
 public/dung-video-pro/
 .next-new/
 .next-old/
+
+# Local scratch / reference files (never commit)
+temp.js
+test.ts
+test-*.js
+thamkhao/
+lib/python/capcut_device.json
