@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronDown,
@@ -18,11 +18,15 @@ import {
   RotateCcw,
   ArrowLeft,
   ChevronRight,
-  Home
+  Home,
+  Sparkles,
+  ChevronsLeft,
+  UserPlus
 } from "lucide-react";
 import { visibleNavFeatures, NAV_CATEGORY_ORDER, featureBySlug, isExternalFeature, type AppFeature } from "@/lib/features";
 import type { NavSource } from "@/lib/analytics/types";
 import { badgeLabel, categoryLabel, featureDescription, featureName, useUiPreferences } from "@/lib/uiPreferences";
+import { companyRegisterUrl } from "@/features/company/companyLinks";
 import { useInstallPrompt } from "@/lib/useInstallPrompt";
 import { getToolIcon, colorForSlug } from "@/components/toolIconMap";
 import { ParticleBackground } from "@/features/landing/ParticleBackground";
@@ -34,7 +38,8 @@ const CATEGORY_ICON: Record<string, any> = {
   video: Film,
   audio: Music,
   image: ImageIcon,
-  office: Briefcase
+  office: Briefcase,
+  template: Sparkles
 };
 
 const CATEGORY_COLOR: Record<string, string> = {
@@ -42,8 +47,20 @@ const CATEGORY_COLOR: Record<string, string> = {
   video: "#ec4899",
   audio: "#22c55e",
   image: "#a78bfa",
-  office: "#06b6d4"
+  office: "#06b6d4",
+  template: "#fb923c"
 };
+
+/** Desktop sidebar collapsed state lives on <html data-sb="collapsed"> (set before paint by app/layout.tsx from localStorage "aio-sb"). */
+const SIDEBAR_STORAGE_KEY = "aio-sb";
+/** Set when a top-bar category is clicked away from the homepage; the homepage scrolls to that section on arrival. */
+const SCROLL_TARGET_KEY = "aio-scroll-to";
+const subscribeSidebar = (cb: () => void) => {
+  const mo = new MutationObserver(cb);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-sb"] });
+  return () => mo.disconnect();
+};
+const readSidebarCollapsed = () => document.documentElement.dataset.sb === "collapsed";
 
 type Props = {
   features: AppFeature[];
@@ -186,11 +203,100 @@ export function AppShell({ features, activeSlug, onSelect, onBack, onRefresh, ch
     e.preventDefault();
     closeDropdown();
     closeMobileSheet();
+    setChosenCategory("");
     onSelect("", "crumb");
   }
 
   const activeFeature = featureBySlug(activeSlug);
   const activeCategory = activeFeature?.category ?? "";
+
+  // Desktop/tablet sidebar (≥ 641px): the top bar is the main menu (categories); the sidebar
+  // lists the tools of the chosen category and follows the open tool.
+  const sidebarCollapsed = useSyncExternalStore(subscribeSidebar, readSidebarCollapsed, () => false);
+  const [chosenCategory, setChosenCategory] = useState<string>(activeCategory);
+  useEffect(() => {
+    if (activeCategory) setChosenCategory(activeCategory);
+  }, [activeCategory]);
+  // Sidebar always shows one group's tools: the group picked in the top bar (it follows the open tool's
+  // group whenever a tool opens, but the top bar can switch it at any time), else the first group.
+  const sidebarCategory = chosenCategory || activeCategory || sortedCategories[0] || "";
+
+
+  function toggleSidebar() {
+    const next = !sidebarCollapsed;
+    if (next) document.documentElement.dataset.sb = "collapsed";
+    else delete document.documentElement.dataset.sb;
+    try { localStorage.setItem(SIDEBAR_STORAGE_KEY, next ? "collapsed" : ""); } catch {}
+    closeDropdown();
+  }
+
+  function sidebarVisible() {
+    return window.matchMedia("(min-width: 641px)").matches;
+  }
+
+  /** Top-bar category click: switches the sidebar list and goes to that group's section on the
+   *  homepage (from any page); without the sidebar (narrow screens) the old dropdown opens. */
+  function onTopCategoryClick(category: string) {
+    if (!sidebarVisible()) {
+      toggleCategory(category);
+      return;
+    }
+    closeDropdown();
+    setChosenCategory(category);
+    if (!activeSlug) {
+      document.getElementById(category)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    // Leaving a tool page: remember the target section, scroll once the homepage has rendered
+    // (also works when the shell remounts, e.g. coming from /mau-video).
+    try { sessionStorage.setItem(SCROLL_TARGET_KEY, category); } catch {}
+    onSelect("", "menu");
+  }
+
+  useEffect(() => {
+    if (activeSlug) return;
+    let target = "";
+    try { target = sessionStorage.getItem(SCROLL_TARGET_KEY) ?? ""; sessionStorage.removeItem(SCROLL_TARGET_KEY); } catch {}
+    if (!target) return;
+    setChosenCategory(target);
+    requestAnimationFrame(() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [activeSlug]);
+
+  function renderSidebarItem(feature: AppFeature) {
+    const Icon = getToolIcon(feature.icon_name);
+    const isExternal = isExternalFeature(feature);
+    const current = feature.slug === activeSlug;
+    const name = featureName(feature.slug, feature.name, locale);
+    const inner = (
+      <>
+        <span className="tn-sb-icon" style={{ ["--icon-color" as string]: colorForSlug(feature.slug) }}><Icon size={19} /></span>
+        <span className="tn-sb-label">{name}</span>
+        {feature.badge === "MỚI" && <span className="tn-badge-new">{badgeLabel(feature.badge, locale)}</span>}
+        {isExternal && <Crown size={12} className="tn-sb-crown" />}
+      </>
+    );
+    const cls = `tn-sb-item ${current ? "is-current" : ""}`;
+    if (isExternal) {
+      return (
+        <a key={feature.slug} className={cls} href={feature.route_path ?? undefined} target="_blank" rel="noopener noreferrer" title={name}>
+          {inner}
+        </a>
+      );
+    }
+    if (feature.standalone) {
+      return (
+        <a key={feature.slug} className={cls} href={feature.route_path ?? "/"} aria-current={current ? "page" : undefined} data-track={`Menu: ${feature.name}`} title={name}>
+          {inner}
+        </a>
+      );
+    }
+    return (
+      <a key={feature.slug} className={cls} href={feature.route_path ?? "/"} aria-current={current ? "page" : undefined}
+        data-track={`Menu: ${feature.name}`} title={name} onClick={(e) => handleItemClick(e, feature, "menu")}>
+        {inner}
+      </a>
+    );
+  }
 
   // Breadcrumb category: shows the sibling tools of the open one (dropdown on
   // desktop, bottom sheet on phones) for quick switching.
@@ -254,6 +360,15 @@ export function AppShell({ features, activeSlug, onSelect, onBack, onRefresh, ch
         </span>
       </>
     );
+    if (feature.standalone) {
+      // Its own page on this domain: a plain full-page navigation.
+      return (
+        <a key={feature.slug} className={`tn-item ${feature.slug === activeSlug ? "is-current" : ""}`} href={feature.route_path ?? "/"}
+          aria-current={feature.slug === activeSlug ? "page" : undefined} data-track={`Menu: ${feature.name}`} onClick={onDone}>
+          {content}
+        </a>
+      );
+    }
     if (isExternal) {
       return (
         <a key={feature.slug} className="tn-item" href={feature.route_path ?? undefined}
@@ -276,6 +391,43 @@ export function AppShell({ features, activeSlug, onSelect, onBack, onRefresh, ch
     <div className="tn-shell" data-ui-theme={theme} data-ui-locale={locale}>
       <ParticleBackground />
       <FileDropGuard />
+
+      <aside className="tn-sidebar" aria-label={locale === "en" ? "Tools in this category" : "Công cụ trong danh mục"}>
+        <a className="tn-sb-brand" href="/" onClick={goHome} title="AIOMMO Studio">
+          <img src="/company/logo.png" alt="" />
+          <span>
+            AIOMMO Studio
+            <small>ALL IN ONE MMO</small>
+          </span>
+        </a>
+        <nav className="tn-sb-scroll">
+          {sidebarCategory && grouped[sidebarCategory] && (() => {
+            const CatIcon = CATEGORY_ICON[sidebarCategory] ?? Folder;
+            const items = grouped[sidebarCategory].sort((a, b) => a.sort_order - b.sort_order);
+            const label = categoryLabel(sidebarCategory, locale);
+            return (
+              <div className="tn-sb-group is-open" style={{ ["--cat-color" as string]: CATEGORY_COLOR[sidebarCategory] ?? "var(--accent)" }}>
+                <div className="tn-sb-group-title" title={label}><CatIcon size={13} /><span>{label}</span></div>
+                <div className="tn-sb-items">{items.map(renderSidebarItem)}</div>
+              </div>
+            );
+          })()}
+        </nav>
+        <div className="tn-sb-foot">
+          <a className="tn-sb-cta" href={companyRegisterUrl("app")} target="_blank" rel="noopener noreferrer" data-track="Đăng ký ngay (sidebar)"
+            title={locale === "en" ? "Register now" : "Đăng ký ngay"}>
+            <UserPlus size={16} />
+            <span className="tn-sb-label">{locale === "en" ? "Register now" : "Đăng ký ngay"}</span>
+          </a>
+          <button type="button" className="tn-sb-item tn-sb-toggle" onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? (locale === "en" ? "Expand menu" : "Mở rộng menu") : (locale === "en" ? "Collapse menu" : "Thu nhỏ menu")}
+            title={sidebarCollapsed ? (locale === "en" ? "Expand" : "Mở rộng") : (locale === "en" ? "Collapse" : "Thu nhỏ")}>
+            <span className="tn-sb-icon"><ChevronsLeft size={15} /></span>
+            <span className="tn-sb-label">{locale === "en" ? "Collapse" : "Thu nhỏ"}</span>
+          </button>
+        </div>
+      </aside>
+
       <div className="tn-bar" ref={barRef}>
         <a className="tn-brand" href="/" onClick={goHome}>
           <img src="/company/logo.png" alt="" />
@@ -295,8 +447,8 @@ export function AppShell({ features, activeSlug, onSelect, onBack, onRefresh, ch
                 <button
                   type="button"
                   ref={(el) => { btnRefs.current[category] = el; }}
-                  className={`tn-cat-btn ${isOpen ? "is-open" : ""} ${category === activeCategory ? "is-current" : ""}`}
-                  onClick={() => toggleCategory(category)}
+                  className={`tn-cat-btn ${isOpen ? "is-open" : ""} ${category === activeCategory ? "is-current" : ""} ${category === sidebarCategory ? "is-chosen" : ""}`}
+                  onClick={() => onTopCategoryClick(category)}
                   onMouseEnter={() => onCategoryHover(category)}
                   style={{ ["--cat-color" as string]: catColor }}
                 >
@@ -360,17 +512,19 @@ export function AppShell({ features, activeSlug, onSelect, onBack, onRefresh, ch
               )}
             </div>
           )}
-          {onRefresh && (
-            <button
-              className="tn-refresh-btn"
-              onClick={onRefresh}
-              aria-label={locale === "en" ? "Refresh tool" : "Làm mới công cụ"}
-              title={locale === "en" ? "Reset this tool" : "Xóa dữ liệu và bắt đầu lại"}
-            >
-              <RotateCcw size={15} />
-              <span>{locale === "en" ? "Refresh" : "Làm mới"}</span>
-            </button>
-          )}
+          {/* Always rendered on desktop (invisible without a tool) so the centred categories never shift between pages. */}
+          <button
+            className={`tn-refresh-btn ${onRefresh ? "" : "is-placeholder"}`}
+            onClick={onRefresh}
+            disabled={!onRefresh}
+            aria-hidden={!onRefresh}
+            tabIndex={onRefresh ? undefined : -1}
+            aria-label={locale === "en" ? "Refresh tool" : "Làm mới công cụ"}
+            title={onRefresh ? (locale === "en" ? "Reset this tool" : "Xóa dữ liệu và bắt đầu lại") : undefined}
+          >
+            <RotateCcw size={15} />
+            <span>{locale === "en" ? "Refresh" : "Làm mới"}</span>
+          </button>
           <button className="tn-icon-btn" onClick={toggleTheme}
             aria-label={theme === "light" ? "Dark mode" : "Light mode"}>
             {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}

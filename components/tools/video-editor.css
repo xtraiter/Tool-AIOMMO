@@ -182,3 +182,48 @@
   .te-pb-ratios { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
   .te-pb-ratios button { flex: 0 0 auto; }
 }
+
+/* ---- text: font picker & custom colour ---- */
+.te-field-label { margin: 2px 0 6px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.te-swatch-custom {
+  position: relative; width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; overflow: hidden;
+  background: conic-gradient(#ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444);
+}
+.te-swatch-custom.is-active { border-color: var(--text); box-shadow: 0 0 0 2px var(--accent); }
+.te-swatch-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+
+.fp { margin-bottom: 12px; }
+.fp-current {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 46px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg-input, var(--field-background, var(--panel-2))); color: var(--text); cursor: pointer;
+}
+.fp-current span { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-current[aria-expanded="true"] { border-color: var(--accent); }
+.fp-pop {
+  margin-top: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden;
+  box-shadow: 0 12px 32px -18px rgb(0 0 0 / 55%);
+}
+.fp-search { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--muted); }
+.fp-search input { flex: 1; min-width: 0; min-height: 44px; border: 0; outline: none; background: transparent; color: var(--text); font-size: 14px; }
+.fp-cats { display: flex; gap: 6px; padding: 8px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.fp-cats button {
+  flex: none; min-height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; background: transparent;
+  color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.fp-cats button.is-active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.fp-list { max-height: 340px; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
+.fp-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 46px; padding: 6px 10px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; text-align: left;
+}
+.fp-item span { font-size: 19px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-item small { flex: none; font-size: 11px; color: var(--muted); }
+.fp-item:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.fp-item.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.fp-empty { margin: 0; padding: 18px 12px; font-size: 13px; color: var(--muted); text-align: center; }
+.fp-foot { padding: 8px; border-top: 1px solid var(--line); }
+.fp-upload {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 40px;
+  border: 1px dashed var(--line); border-radius: 10px; background: transparent; color: var(--text); font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.fp-err { margin: 6px 0 0; font-size: 12px; color: #ef4444; }

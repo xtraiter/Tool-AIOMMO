@@ -28,6 +28,8 @@ import {
   Volume2,
   ExternalLink,
   Sparkles,
+  PenLine,
+  Briefcase,
   type LucideIcon
 } from "lucide-react";
 
@@ -59,7 +61,10 @@ export const toolIconMap: Record<string, LucideIcon> = {
   "share-2": Share2,
   bot: Bot,
   "volume-2": Volume2,
-  "external-link": ExternalLink
+  "external-link": ExternalLink,
+  sparkles: Sparkles,
+  "pen-line": PenLine,
+  briefcase: Briefcase
 };
 
 export function getToolIcon(iconName: string | null | undefined): LucideIcon {

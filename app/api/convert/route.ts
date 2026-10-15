@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import path from "path";
 import { execFile } from "child_process";
 import { rateLimited } from "@/lib/rateLimit";
+import { libreOfficePath, VENV_PYTHON } from "@/lib/serverTools";
 
 function execPromise(command: string, args: string[], options: { cwd?: string, timeout?: number } = {}) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
@@ -29,7 +30,6 @@ function runSerialized<T>(task: () => Promise<T>): Promise<T> {
 
 // PDF → Word uses pdf2docx (real paragraphs & tables) from the project venv;
 // LibreOffice's PDF import is the fallback (text boxes, but always available).
-const VENV_PYTHON = path.join(/*turbopackIgnore: true*/ process.cwd(), ".venv", "bin", "python");
 const PDF_TO_DOCX_SCRIPT = path.join(/*turbopackIgnore: true*/ process.cwd(), "lib", "python", "pdf_to_docx.py");
 
 class EncryptedPdfError extends Error {}
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     const workDir = tempDir;
     const converted = isPdfToWord
       && await runSerialized(() => pdfToDocxWithPdf2docx(inputPath, path.join(workDir, "output.docx")));
-    const { stdout, stderr } = converted ? { stdout: "", stderr: "" } : await runSerialized(() => execPromise("libreoffice", [
+    const { stdout, stderr } = converted ? { stdout: "", stderr: "" } : await runSerialized(async () => execPromise(await libreOfficePath(), [
       "--headless",
       "--nologo",
       "--nofirststartwizard",

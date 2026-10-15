@@ -2,6 +2,7 @@ import { fetchFile } from "@ffmpeg/util";
 import { loadSharedFfmpeg } from "@/lib/ffmpegLoader";
 import { canvasSize, end, hasAudio, projectDuration, type Clip, type Media, type Project } from "./model";
 import { drawText } from "./render";
+import { loadFontsFor } from "@/lib/fonts";
 
 type Tr = (vi: string, en: string) => string;
 
@@ -44,6 +45,8 @@ export async function exportProject(o: ExportOptions): Promise<Blob> {
   if (D <= 0) throw new Error(tr("Dự án đang trống.", "The project is empty."));
   const { w: W, h: H } = canvasSize(project.ratio, o.longEdge);
 
+  // Text is rasterised on a canvas, so its fonts must be downloaded first.
+  await loadFontsFor(project.clips.filter((c) => c.kind === "text" && c.style).map((c) => c.style!));
   o.onProgress(0, tr("Đang nạp bộ xử lý FFmpeg...", "Loading the FFmpeg engine..."));
   const ffmpeg = await loadSharedFfmpeg();
   const log: string[] = [];

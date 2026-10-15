@@ -33,6 +33,8 @@ export type Media = {
 };
 
 export type TextStyle = {
+  /** Google Fonts / uploaded family; undefined = system font. */
+  font?: string;
   color: string;
   size: number; // % of canvas height
   bold: boolean;

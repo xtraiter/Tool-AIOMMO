@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Cpu, Download, Film, Square, UploadCloud, Wand2, X } from "lucide-react";
 import { useTr } from "@/lib/i18n";
-import { BG_TIERS, detectDevice, loadMasker, type BgTierId } from "@/lib/bgRemover/engine";
+import { BG_TIERS, gpuUsableFor, loadMasker, type BgTierId } from "@/lib/bgRemover/engine";
 import { VIDEO_FORMATS, encodeArgs, formatById, frameName, type VideoFormatId } from "@/lib/bgRemover/videoExport";
 import { FFFSType } from "@ffmpeg/ffmpeg";
 import { downloadBlob, formatBytes, formatDuration, loadSharedFfmpeg, terminateSharedFfmpeg } from "@/lib/ffmpegLoader";
@@ -77,7 +77,7 @@ export function VideoBgRemover() {
   const fileUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
   useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
   useEffect(() => () => { if (result) URL.revokeObjectURL(result.url); }, [result]);
-  useEffect(() => { detectDevice().then((d) => setGpu(d.device === "webgpu")); }, []);
+  useEffect(() => { gpuUsableFor(tierId).then(setGpu); }, [tierId, busy]);
 
   const format = formatById(formatId);
   // MP4 can't be transparent — fall back to a green screen so the cut-out stays usable.

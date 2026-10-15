@@ -16,6 +16,8 @@ import { TimelineView, type TimelineApi, type TimelineHandle } from "./timeline/
 import { MediaPool } from "./timeline/pool";
 import { clipBox, drawFrame } from "./timeline/render";
 import { exportProject } from "./timeline/exporter";
+import { FontPicker } from "./timeline/FontPicker";
+import { loadFont, onFontsChange } from "@/lib/fonts";
 import { addFilmstrip, importFile, mediaKind } from "./timeline/importMedia";
 import {
   DEFAULT_IMAGE_DUR, DEFAULT_TEXT_DUR, DEFAULT_TEXT_STYLE, RATIOS, addClip, canvasSize, clipAt, duplicateClip, end, hasAudio, makeClip,
@@ -162,6 +164,12 @@ export function VideoTimeline() {
   }, [project, media, requestDraw]);
 
   useEffect(() => { requestDraw(); }, [selectedId, W, H, requestDraw]);
+
+  // Text clips use web fonts: fetch the ones in the project and redraw as each one arrives.
+  useEffect(() => onFontsChange(requestDraw), [requestDraw]);
+  useEffect(() => {
+    for (const c of project.clips) if (c.kind === "text" && c.style) loadFont(c.style.font, c.style.bold, c.style.italic);
+  }, [project.clips]);
 
   const seek = useCallback((t: number, fromScroll = false) => {
     const clamped = clamp(t, 0, totalRef.current);
@@ -587,11 +595,16 @@ export function VideoTimeline() {
               <section data-sec="text" className={`te-section${open("text") ? " is-open" : ""}`}>
                 <h3><Pencil size={15} /> {tr("Nội dung chữ", "Text")}</h3>
                 <textarea className="te-textarea" rows={3} value={selected.text ?? ""} onChange={(e) => patch({ text: e.target.value }, "txt")} aria-label={tr("Nội dung chữ", "Text")} />
+                <div className="te-field-label">{tr("Phông chữ", "Font")}</div>
+                <FontPicker value={selected.style.font} onChange={(font) => patchStyle({ font }, "font")} />
                 <Slider label={tr("Cỡ chữ", "Font size")} value={selected.style.size} min={3} max={20} step={0.5} format={(v) => `${v}`} onChange={(v) => patchStyle({ size: v }, "fs")} />
                 <div className="te-swatches" role="radiogroup" aria-label={tr("Màu chữ", "Text colour")}>
                   {SWATCHES.map((c) => (
                     <button key={c} type="button" role="radio" aria-checked={selected.style!.color === c} className={selected.style!.color === c ? "is-active" : ""} style={{ background: c }} onClick={() => patchStyle({ color: c }, "col")} aria-label={c} />
                   ))}
+                  <label className={`te-swatch-custom${SWATCHES.includes(selected.style.color) ? "" : " is-active"}`} title={tr("Màu tùy chọn", "Custom colour")}>
+                    <input type="color" value={selected.style.color} onChange={(e) => patchStyle({ color: e.target.value }, "col")} aria-label={tr("Màu tùy chọn", "Custom colour")} />
+                  </label>
                 </div>
                 <div className="te-toggles">
                   {([["bold", tr("Đậm", "Bold")], ["italic", tr("Nghiêng", "Italic")], ["stroke", tr("Viền", "Outline")], ["box", tr("Nền", "Box")], ["shadow", tr("Bóng", "Shadow")]] as const).map(([k, label]) => (

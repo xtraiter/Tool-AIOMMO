@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile, readFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { rateLimited } from "@/lib/rateLimit";
+import { pythonPath } from "@/lib/serverTools";
 
 function execPromise(command: string, args: string[], options: { cwd?: string, timeout?: number } = {}) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
 
     const pythonScript = path.join(process.cwd(), "lib", "python", "capcut_tts.py");
 
-    await execPromise("python3", [
+    await execPromise(await pythonPath(), [
       pythonScript,
       textPath,
       outPath,

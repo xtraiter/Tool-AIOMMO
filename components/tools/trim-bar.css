@@ -17,53 +17,92 @@
 .trim-clock { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; }
 .trim-clock em { color: var(--muted); font-style: normal; font-weight: 500; }
 
-.trim-scroll {
-  overflow-x: auto; overflow-y: hidden; border: 1px solid var(--line); border-radius: 14px;
-  background: var(--panel-2); padding: 0 16px 6px;
-  touch-action: pan-x; overscroll-behavior-x: contain; user-select: none; -webkit-user-select: none;
+/* Fixed centre playhead: .trim-view holds the scroller plus the playhead overlay drawn on top of it. */
+.trim-view {
+  position: relative; border-radius: 14px; overflow: hidden;
+  background: linear-gradient(180deg, #15181d 0%, #0f1115 100%);
+  border: 1px solid rgb(255 255 255 / 8%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%), 0 8px 24px -16px rgb(0 0 0 / 60%);
+  color-scheme: dark;
 }
-.trim-track { position: relative; height: 128px; }
-.trim-ruler { position: relative; height: 24px; border-bottom: 1px solid var(--line); }
+.trim-scroll {
+  overflow-x: auto; overflow-y: hidden; outline: none;
+  touch-action: pan-x; overscroll-behavior-x: contain; user-select: none; -webkit-user-select: none;
+  scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 18%) transparent;
+}
+.trim-scroll:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.trim-scroll::-webkit-scrollbar { height: 6px; }
+.trim-scroll::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 18%); border-radius: 3px; }
+.trim-track { position: relative; height: 132px; cursor: grab; }
+.trim-track:active { cursor: grabbing; }
+
+/* Ruler: labelled major ticks + minor ticks drawn as a repeating gradient. */
+.trim-ruler {
+  position: absolute; top: 0; height: 26px;
+  background-image: linear-gradient(90deg, rgb(255 255 255 / 22%) 1px, transparent 1px);
+  background-repeat: repeat-x; background-position: 0 100%;
+}
 .trim-ruler span {
-  position: absolute; top: 0; height: 100%; padding: 3px 0 0 4px; font-size: 10.5px; color: var(--muted);
-  border-left: 1px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none;
+  position: absolute; top: 0; height: 100%; padding: 4px 0 0 5px; font-size: 10.5px; font-weight: 600;
+  color: rgb(255 255 255 / 55%); border-left: 1px solid rgb(255 255 255 / 40%);
+  font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none;
 }
 
-.trim-strip { position: absolute; left: 0; right: 0; top: 30px; height: 84px; border-radius: 8px; background: color-mix(in srgb, var(--text) 6%, transparent); }
+.trim-strip { position: absolute; top: 34px; height: 86px; border-radius: 8px; background: rgb(255 255 255 / 5%); }
 .trim-thumbs { position: absolute; inset: 0; display: flex; border-radius: 8px; overflow: hidden; }
 .trim-thumbs img { flex: 1 1 0; min-width: 0; height: 100%; object-fit: cover; pointer-events: none; }
-.trim-wave { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.trim-wave path { stroke: color-mix(in srgb, var(--accent) 85%, var(--text)); stroke-width: 1.4; vector-effect: non-scaling-stroke; fill: none; }
+.trim-wave { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; border-radius: 8px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.trim-wave path { stroke: color-mix(in srgb, var(--accent) 80%, #fff); stroke-width: 1.4; vector-effect: non-scaling-stroke; fill: none; }
 
-.trim-dim { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.62); pointer-events: none; }
+.trim-dim { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.66); pointer-events: none; }
 .trim-frame {
   position: absolute; top: 0; bottom: 0; pointer-events: none; box-sizing: border-box;
   border-top: 3px solid var(--accent); border-bottom: 3px solid var(--accent);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%), 0 0 18px -4px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
-/* 22px visible bar, ~46px touch target */
+/* 16px visible grip outside the selection, ~44px touch target */
 .trim-handle {
-  position: absolute; top: -2px; bottom: -2px; width: 46px; margin-left: -23px; z-index: 5;
+  position: absolute; top: -3px; bottom: -3px; width: 44px; margin-left: -22px; z-index: 5;
   display: flex; align-items: center; justify-content: center; cursor: ew-resize;
   touch-action: none; outline: none;
 }
 .trim-handle i {
-  display: block; width: 22px; height: 100%; background: var(--accent); position: relative;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  display: block; width: 16px; height: 100%; background: var(--accent); position: relative;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 45%);
 }
-.trim-handle.is-start i { border-radius: 10px 0 0 10px; transform: translateX(-11px); }
-.trim-handle.is-end i { border-radius: 0 10px 10px 0; transform: translateX(11px); }
-.trim-handle i::after { content: ""; position: absolute; left: 50%; top: 50%; width: 3px; height: 26px; border-radius: 2px; background: rgba(0, 0, 0, 0.55); transform: translate(-50%, -50%); }
-.trim-handle:focus-visible i { outline: 3px solid var(--text); outline-offset: 2px; }
+.trim-handle.is-start i { border-radius: 8px 0 0 8px; transform: translateX(-8px); }
+.trim-handle.is-end i { border-radius: 0 8px 8px 0; transform: translateX(8px); }
+.trim-handle i::after { content: ""; position: absolute; left: 50%; top: 50%; width: 3px; height: 22px; border-radius: 2px; background: rgba(0, 0, 0, 0.5); transform: translate(-50%, -50%); }
+.trim-handle.is-active i { filter: brightness(1.12); }
+.trim-handle:focus-visible i { outline: 2px solid #fff; outline-offset: 2px; }
+.trim-drag-tip {
+  position: absolute; top: -30px; transform: translateX(-50%); z-index: 7; padding: 2px 7px; border-radius: 6px;
+  background: var(--accent); color: var(--button-ink, #1a1200); font-size: 11px; font-weight: 800;
+  font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none;
+}
 
-/* The playhead only grabs pointer input on its round knob (in the ruler strip), so it can never steal a drag
-   from the start/end handles when they sit at the same time. */
-.trim-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; z-index: 4; pointer-events: none; background: #ef4444; }
-.trim-head b {
-  position: absolute; left: 50%; top: 0; width: 34px; height: 24px; margin-left: -17px;
-  pointer-events: auto; touch-action: none; cursor: ew-resize; background: transparent;
+/* The playhead never moves: the track scrolls under it, so it can't drift off the current frame. */
+.trim-playhead {
+  position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; z-index: 6;
+  background: #ff3b30; box-shadow: 0 0 0 1px rgb(0 0 0 / 30%), 0 0 10px rgb(255 59 48 / 55%);
+  pointer-events: none; transition: opacity 0.15s ease;
 }
-.trim-head b::after { content: ""; position: absolute; left: 50%; top: 4px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: #ef4444; border: 2px solid #fff; }
+.trim-playhead::before {
+  content: ""; position: absolute; top: 0; left: 50%; width: 12px; height: 9px; margin-left: -6px;
+  background: #ff3b30; clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.trim-playhead-time {
+  position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); padding: 1px 6px; border-radius: 5px;
+  background: #ff3b30; color: #fff; font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.trim-playhead.is-faded { opacity: 0.35; }
+
+.trim-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center; width: 44px; min-height: 44px;
+  border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--text); cursor: pointer;
+}
+.trim-iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .trim-zoom { display: flex; align-items: center; gap: 8px; }
 .trim-zoom button {
@@ -71,8 +110,8 @@
   border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--text); cursor: pointer; flex-shrink: 0;
 }
 .trim-zoom button:disabled { opacity: 0.4; cursor: not-allowed; }
-.trim-zoom input[type="range"] { flex: 1; min-width: 60px; accent-color: var(--accent); }
-.trim-zoom-hint { display: none; font-size: 11.5px; color: var(--muted); }
+.trim-zoom input[type="range"] { flex: 1 1 140px; min-width: 60px; max-width: 280px; accent-color: var(--accent); }
+.trim-zoom-hint { display: none; min-width: 0; flex: 0 1 auto; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (min-width: 720px) { .trim-zoom-hint { display: inline; } }
 
 .trim-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
@@ -115,3 +154,12 @@
 }
 .trim.is-remove .trim-handle i { background: #ef4444; }
 .trim.is-remove .trim-play { background: #ef4444; color: #fff; }
+
+/* Phones: keep the transport on one row — the play button shows just its icon. */
+@media (max-width: 479px) {
+  .trim-transport { flex-wrap: nowrap; gap: 6px; }
+  .trim-play { padding: 0 14px; }
+  .trim-play span, .trim-loop span { display: none; }
+  .trim-loop { padding: 0 12px; }
+  .trim-clock { font-size: 13.5px; }
+}

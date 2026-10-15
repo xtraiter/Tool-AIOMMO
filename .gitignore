@@ -49,3 +49,11 @@ data/
 
 # Python venv for server-side helpers (pdf2docx): python3 -m venv .venv && .venv/bin/pip install pdf2docx
 .venv/
+
+# Server-side binaries (ffmpeg, LibreOffice) installed by scripts/setup-tools.sh
+tools/
+
+# OpenReel build output (scripts/build-openreel.sh)
+public/dung-video-pro/
+.next-new/
+.next-old/

@@ -1,0 +1,5 @@
+# Python packages for server-side helpers, installed into .venv by scripts/setup-tools.sh
+yt-dlp[default,curl-cffi]
+pdf2docx
+requests
+curl_cffi  # lib/python/fetch_page.py (Shopee / TikTok Shop)

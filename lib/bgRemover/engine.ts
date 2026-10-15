@@ -1,4 +1,4 @@
-export type BgTierId = "balanced" | "quality";
+export type BgTierId = "balanced";
 
 export interface BgTier {
   id: BgTierId;
@@ -10,24 +10,19 @@ export interface BgTier {
   taglineEn: string;
 }
 
+// Only RMBG-1.4 is offered: the larger Swin-based models (BiRefNet-lite, full
+// BiRefNet, BEN2) need 17 storage buffers per shader, while Chrome/Edge on
+// Windows expose 16 — even on an RTX 5060 Ti — and on the CPU they run out of
+// WASM memory (std::bad_alloc).
 export const BG_TIERS: BgTier[] = [
   {
     id: "balanced",
-    name: "Nhanh",
-    nameEn: "Fast",
+    name: "RMBG-1.4",
+    nameEn: "RMBG-1.4",
     modelName: "BRIA RMBG-1.4",
     sizeFormatted: "42 MB",
-    tagline: "~42 MB, nhận diện đa năng: người, thú cưng, xe cộ, sản phẩm. Chạy tốt cả trên máy không có card đồ họa.",
-    taglineEn: "~42 MB, versatile: people, pets, vehicles, products. Runs well even without a graphics card.",
-  },
-  {
-    id: "quality",
-    name: "Chất lượng cao",
-    nameEn: "High quality",
-    modelName: "BiRefNet-lite",
-    sizeFormatted: "115 MB",
-    tagline: "~115 MB, viền tóc & chi tiết nhỏ sắc nét nhất. Cần máy có card đồ họa (WebGPU); máy không có sẽ rất chậm.",
-    taglineEn: "~115 MB, sharpest hair & fine detail. Needs a graphics card (WebGPU); very slow without one.",
+    tagline: "~42 MB, nhận diện đa năng: người, thú cưng, xe cộ, sản phẩm. Dùng card đồ họa nếu có, không có vẫn chạy được bằng CPU.",
+    taglineEn: "~42 MB, versatile: people, pets, vehicles, products. Uses the graphics card when available, otherwise runs on the CPU.",
   },
 ];
 
@@ -35,7 +30,8 @@ export type ProgressFn = (step: string, percent: number) => void;
 
 type Device = "webgpu" | "wasm";
 
-let gpuProbe: Promise<{ device: Device; fp16: boolean }> | null = null;
+type GpuInfo = { device: Device; name: string };
+let gpuProbe: Promise<GpuInfo> | null = null;
 
 /**
  * `navigator.gpu` existing doesn't mean a GPU is usable (blocklisted drivers,
@@ -46,11 +42,32 @@ export function detectDevice() {
     try {
       const gpu = (navigator as any).gpu;
       const adapter = gpu ? await gpu.requestAdapter() : null;
-      if (adapter) return { device: "webgpu" as Device, fp16: adapter.features.has("shader-f16") };
+      if (adapter) {
+        const info = adapter.info ?? {};
+        return {
+          device: "webgpu" as Device,
+          name: info.description || [info.vendor, info.architecture].filter(Boolean).join(" ") || "GPU",
+        };
+      }
     } catch {}
-    return { device: "wasm" as Device, fp16: false };
+    return { device: "wasm" as Device, name: "" };
   })();
   return gpuProbe;
+}
+
+// Remembered per GPU, so switching the browser to another card gives it a fresh try.
+const GPU_BAD_KEY = (tier: BgTierId) => `bgr-webgpu-bad-${tier}`;
+function gpuMarkedBad(tier: BgTierId, gpuName: string) {
+  try { return localStorage.getItem(GPU_BAD_KEY(tier)) === gpuName; } catch { return false; }
+}
+function markGpuBad(tier: BgTierId, gpuName: string) {
+  try { localStorage.setItem(GPU_BAD_KEY(tier), gpuName); } catch {}
+}
+
+/** Whether this tier will run on the GPU here (usable adapter, no past failure). */
+export async function gpuUsableFor(tierId: BgTierId) {
+  const info = await detectDevice();
+  return info.device === "webgpu" && !gpuMarkedBad(tierId, info.name);
 }
 
 function downloadProgress(label: string, onProgress: ProgressFn) {
@@ -103,34 +120,15 @@ async function loadRmbg(device: Device, onProgress: ProgressFn): Promise<Loaded>
   };
 }
 
-async function loadBiRefNet(device: Device, fp16: boolean, onProgress: ProgressFn): Promise<Loaded> {
-  const { pipeline, RawImage, env } = await import("@huggingface/transformers");
-  env.allowLocalModels = false;
-  env.useBrowserCache = true;
-  onProgress(`Đang tải mô hình BiRefNet-lite (~${fp16 ? 115 : 224}MB)...`, 10);
-  const segmenter = await pipeline("image-segmentation", "onnx-community/BiRefNet_lite-ONNX", {
-    device,
-    dtype: fp16 ? "fp16" : "fp32",
-    progress_callback: downloadProgress("BiRefNet-lite", onProgress),
-  });
-  return {
-    device,
-    mask: async (source) => {
-      const [first] = (await segmenter(RawImage.fromCanvas(source))) as any[];
-      return first.mask.data as Uint8Array;
-    },
-  };
-}
-
 /**
- * Loads (once) the segmentation model for a tier, on the GPU when one is
- * usable, and falls back to the CPU if the GPU backend fails to start or run.
+ * Loads (once) the segmentation model, on the GPU when one is usable, and
+ * falls back to the CPU if the GPU backend fails to start or run.
  */
 export async function loadMasker(tierId: BgTierId, onProgress: ProgressFn): Promise<Loaded> {
-  const { device, fp16 } = await detectDevice();
-
-  const load = (dev: Device) =>
-    tierId === "quality" ? loadBiRefNet(dev, dev === "webgpu" && fp16, onProgress) : loadRmbg(dev, onProgress);
+  const gpuInfo = await detectDevice();
+  // Skip the GPU when it already failed with this model on this browser.
+  const device: Device = (await gpuUsableFor(tierId)) ? "webgpu" : "wasm";
+  const load = (dev: Device) => loadRmbg(dev, onProgress);
 
   const key = tierId;
   let pending = loaded.get(key);
@@ -146,12 +144,13 @@ export async function loadMasker(tierId: BgTierId, onProgress: ProgressFn): Prom
         await gpu.mask(probe);
       } catch (err) {
         console.warn(`[bgRemover] WebGPU failed for ${tierId}, falling back to CPU:`, err);
+        markGpuBad(tierId, gpuInfo.name);
         onProgress("Card đồ họa không dùng được, chuyển sang xử lý bằng CPU...", 12);
         return load("wasm");
       }
-      // Some GPUs pass the probe and still fail later (e.g. "Too many storage
-      // buffers in shader" on GPUs capped at 16) — on the first runtime error,
-      // switch to the CPU for good and redo that image instead of failing.
+      // Some GPUs pass the probe and still fail later — on the first runtime
+      // error, switch to the CPU for good and redo that image instead of failing.
+      // (Needs scripts/patch-transformers.js, or the failed run poisons later ones.)
       let active = gpu;
       let cpu: Promise<Loaded> | null = null;
       return {
@@ -162,6 +161,7 @@ export async function loadMasker(tierId: BgTierId, onProgress: ProgressFn): Prom
           } catch (err) {
             if (active.device !== "webgpu") throw err;
             console.warn(`[bgRemover] WebGPU run failed for ${tierId}, switching to CPU:`, err);
+            markGpuBad(tierId, gpuInfo.name);
             onProgress("Card đồ họa gặp lỗi, chuyển sang xử lý bằng CPU...", 12);
             cpu ??= load("wasm");
             active = await cpu;

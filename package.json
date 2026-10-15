@@ -10,7 +10,9 @@
     "start": "next start",
     "lint": "eslint .",
     "desktop": "electron main.js",
-    "postinstall": "node scripts/copy-ort.js"
+    "postinstall": "node scripts/copy-ort.js && node scripts/patch-transformers.js",
+    "setup:tools": "bash scripts/setup-tools.sh",
+    "update:ytdlp": "bash scripts/setup-tools.sh --update-ytdlp"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",

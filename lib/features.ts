@@ -12,6 +12,8 @@ export type AppFeature = {
   is_admin_only: boolean;
   is_licensed_separately?: boolean;
   badge?: string;
+  /** Served as its own page on this domain (not rendered inside the tool shell), e.g. /dung-video-pro. */
+  standalone?: boolean;
 };
 
 export const HIDDEN_NAV_FEATURE_SLUGS = new Set([
@@ -25,7 +27,7 @@ export function visibleNavFeatures(features: AppFeature[]) {
 
 const PREMIUM_URL = companyRegisterUrl("app");
 
-export const NAV_CATEGORY_ORDER = ["download", "video", "audio", "image", "office"];
+export const NAV_CATEGORY_ORDER = ["download", "video", "audio", "image", "office", "template"];
 
 // Tải Video & Album — chưa build được (cần scrape API nền tảng bên thứ ba), dẫn sang All In One MMO.
 const DOWNLOAD_FEATURES: AppFeature[] = [
@@ -113,8 +115,8 @@ const VIDEO_FEATURES: AppFeature[] = [
 
   {
     slug: "utility.convert.video",
-    name: "Đổi Định Dạng Video / Âm Thanh",
-    description: "Chuyển đổi MP4, WebM, GIF, MP3, WAV, M4A... trực tiếp trên trình duyệt, không cài phần mềm.",
+    name: "Đổi Định Dạng Video",
+    description: "Đổi MP4, MOV, MKV, WebM, AVI, GIF, WebP động, tách MP3; đổi độ phân giải, cắt khung 9:16 cho TikTok. Không cần cài phần mềm.",
     category: "video",
     route_path: "/doi-video",
     icon_name: "file-video",
@@ -154,6 +156,18 @@ const VIDEO_FEATURES: AppFeature[] = [
     sort_order: 60,
     is_admin_only: false,
     badge: "MINI STUDIO"
+  },
+  {
+    slug: "video.studio.pro",
+    name: "Trình Dựng Video Pro",
+    description: "Dựng chuyên nghiệp như Premiere/CapCut: nhiều lớp, xóa phông xanh, hòa trộn lớp, chỉnh màu & LUT, keyframe, sticker. Dùng tốt nhất trên máy tính.",
+    category: "video",
+    route_path: "/dung-video-pro",
+    icon_name: "clapperboard",
+    sort_order: 61,
+    is_admin_only: false,
+    badge: "PRO",
+    standalone: true
   }
 ];
 
@@ -301,12 +315,90 @@ const OFFICE_FEATURES: AppFeature[] = [
   }
 ];
 
+// Mẫu Video & Prompt AI — thư viện tĩnh tại /mau-video (features/mau-video). Là trang riêng (standalone),
+// không chạy trong PortalPage, nên route có nhiều đoạn đường dẫn.
+const TEMPLATE_FEATURES: AppFeature[] = [
+  {
+    slug: "template.library",
+    name: "Thư Viện Mẫu Video & Prompt AI",
+    description: "Prompt và template cho Veo 3, Sora, Midjourney, ChatGPT, Gemini, Claude, ElevenLabs, CapCut. Điền biến, sao chép, dùng ngay.",
+    category: "template",
+    route_path: "/mau-video",
+    icon_name: "sparkles",
+    sort_order: 10,
+    is_admin_only: false,
+    badge: "MIỄN PHÍ",
+    standalone: true
+  },
+  {
+    slug: "template.video",
+    name: "Mẫu Prompt Video AI",
+    description: "Prompt Veo 3, Sora, Kling và kịch bản TikTok/Reels/YouTube: quảng cáo sản phẩm, video giải thích, hook mở đầu.",
+    category: "template",
+    route_path: "/mau-video/danh-muc/video",
+    icon_name: "film",
+    sort_order: 20,
+    is_admin_only: false,
+    badge: "VEO 3 · SORA",
+    standalone: true
+  },
+  {
+    slug: "template.image",
+    name: "Mẫu Prompt Hình Ảnh AI",
+    description: "Midjourney, DALL·E, Imagen: ảnh sản phẩm studio, avatar, thumbnail YouTube, poster.",
+    category: "template",
+    route_path: "/mau-video/danh-muc/image",
+    icon_name: "image",
+    sort_order: 30,
+    is_admin_only: false,
+    badge: "MIDJOURNEY",
+    standalone: true
+  },
+  {
+    slug: "template.content",
+    name: "Mẫu Prompt Viết Nội Dung",
+    description: "Caption, bài chuẩn SEO, email, kịch bản bán hàng cho ChatGPT, Gemini, Claude.",
+    category: "template",
+    route_path: "/mau-video/danh-muc/content",
+    icon_name: "pen-line",
+    sort_order: 40,
+    is_admin_only: false,
+    badge: "SEO · CAPTION",
+    standalone: true
+  },
+  {
+    slug: "template.audio",
+    name: "Mẫu Prompt Giọng Nói & Nhạc",
+    description: "ElevenLabs, MiniMax, Suno: lồng tiếng quảng cáo, nhạc nền, giọng đọc kể chuyện.",
+    category: "template",
+    route_path: "/mau-video/danh-muc/audio",
+    icon_name: "music",
+    sort_order: 50,
+    is_admin_only: false,
+    badge: "TTS · SUNO",
+    standalone: true
+  },
+  {
+    slug: "template.biz",
+    name: "Mẫu Prompt Kinh Doanh & MMO",
+    description: "Affiliate, chốt đơn, chăm sóc khách hàng, phân tích thị trường và ngách kinh doanh.",
+    category: "template",
+    route_path: "/mau-video/danh-muc/biz",
+    icon_name: "briefcase",
+    sort_order: 60,
+    is_admin_only: false,
+    badge: "MMO",
+    standalone: true
+  }
+];
+
 export const DEFAULT_LOCAL_FEATURES: AppFeature[] = [
   ...DOWNLOAD_FEATURES,
   ...VIDEO_FEATURES,
   ...AUDIO_FEATURES,
   ...IMAGE_FEATURES,
-  ...OFFICE_FEATURES
+  ...OFFICE_FEATURES,
+  ...TEMPLATE_FEATURES
 ];
 
 // Short Vietnamese URL for every in-app tool (tool.allinonemmo.com/cat-video):
@@ -316,7 +408,7 @@ export function isExternalFeature(feature: AppFeature) {
 }
 
 const SLUG_BY_PATH = new Map(
-  DEFAULT_LOCAL_FEATURES.filter((f) => f.route_path && !isExternalFeature(f)).map((f) => [f.route_path as string, f.slug])
+  DEFAULT_LOCAL_FEATURES.filter((f) => f.route_path && !isExternalFeature(f) && !f.standalone).map((f) => [f.route_path as string, f.slug])
 );
 
 export function featureBySlug(slug: string | null | undefined) {

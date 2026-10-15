@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Play, Pause, Repeat, ZoomIn, ZoomOut, Maximize2, Crosshair } from "lucide-react";
+import { Play, Pause, Repeat, ZoomIn, ZoomOut, Maximize2, Crosshair, SkipBack, SkipForward } from "lucide-react";
 import { fmtTime, parseTime, clamp } from "@/lib/timeFormat";
 import { useTr } from "@/lib/i18n";
 import "./trim-bar.css";
@@ -28,6 +28,9 @@ type Props = {
 
 const MIN_GAP = 0.1;
 const STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+/** Zoom 1 = the whole file fills half the view, so it stays fully visible wherever the playhead is. */
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 160;
 
 function TimeChip({
   label, value, active, onFocusChip, onCommit,
@@ -59,6 +62,10 @@ function TimeChip({
   );
 }
 
+/**
+ * Range trimmer with a fixed centre playhead (like the timeline editor / CapCut): the track scrolls
+ * underneath it, so the red line always sits exactly on the current frame and zooming never jumps.
+ */
 export function TrimBar({
   duration, start, end, onChange, current, onSeek, playing, onTogglePlay, loop, onLoopChange, thumbs, peaks, mode = "keep", disabled,
 }: Props) {
@@ -66,101 +73,162 @@ export function TrimBar({
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const [viewW, setViewW] = useState(320);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(MIN_ZOOM);
+  const [scrollX, setScrollX] = useState(0);
   const [active, setActive] = useState<"start" | "end">("start");
-  const pendingCenter = useRef<number | null>(null);
-  const drag = useRef<{ which: "start" | "end" | "head"; offset: number } | null>(null);
-  const tap = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
+  const [dragging, setDragging] = useState<"start" | "end" | null>(null);
+  /** scrollLeft we set ourselves, so the resulting scroll event isn't mistaken for the user scrubbing. */
+  const lastSet = useRef(-1);
+  /** While a handle drag or a seek animation runs, the track must not follow `current`. */
+  const hold = useRef(false);
+  const anim = useRef(0);
+  const drag = useRef<{ which: "start" | "end"; offset: number } | null>(null);
+  const pan = useRef<{ x: number; left: number; moved: boolean; id: number } | null>(null);
   const pinch = useRef<{ pointers: Map<number, number>; startDist: number; startZoom: number } | null>(null);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setViewW(Math.max(200, el.clientWidth - 32)));
+    const ro = new ResizeObserver(() => setViewW(el.clientWidth || 320));
     ro.observe(el);
-    setViewW(Math.max(200, el.clientWidth - 32));
+    setViewW(el.clientWidth || 320);
     return () => ro.disconnect();
   }, []);
 
-  const trackW = viewW * zoom;
-  const pps = duration > 0 ? trackW / duration : 1;
+  const pad = viewW / 2;
+  const pps = duration > 0 ? (Math.max(80, pad - 24) / duration) * zoom : 1;
+  const ppsRef = useRef(pps);
+  ppsRef.current = pps;
 
-  const timeAt = useCallback(
-    (clientX: number) => {
-      const rect = trackRef.current?.getBoundingClientRect();
-      if (!rect) return 0;
-      return clamp((clientX - rect.left) / pps, 0, duration);
-    },
-    [pps, duration]
-  );
-
-  const applyZoom = useCallback((next: number) => {
+  const setScroll = useCallback((x: number) => {
     const el = scrollRef.current;
-    const z = clamp(next, 1, 80);
-    if (el && duration > 0) pendingCenter.current = (el.scrollLeft + el.clientWidth / 2 - 16) / pps;
-    setZoom(z);
-  }, [pps, duration]);
+    if (!el) return;
+    lastSet.current = x;
+    el.scrollLeft = x;
+  }, []);
 
+  // The track follows the playhead (playback, seeking, zooming, resizing) — no auto-zoom, no paging.
   useLayoutEffect(() => {
+    if (hold.current) return;
     const el = scrollRef.current;
-    if (el && pendingCenter.current !== null) {
-      el.scrollLeft = pendingCenter.current * pps + 16 - el.clientWidth / 2;
-      pendingCenter.current = null;
-    }
-  }, [zoom, pps]);
+    if (!el) return;
+    const x = current * pps;
+    if (Math.abs(el.scrollLeft - x) >= 0.5) setScroll(x);
+  }, [current, pps, viewW, setScroll]);
 
-  // On long media the whole-file view moves the playhead well under 1 px/s, so it looks frozen: zoom in when playback starts.
-  useEffect(() => {
-    if (!playing || duration <= 0) return;
-    const wanted = 6; // px per second
-    if (pps >= 3) return;
-    pendingCenter.current = current;
-    setZoom(clamp(wanted / (viewW / duration), 1, 80));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing]);
+  /** Smoothly brings time `t` under the playhead (used after a tap or a handle drag). */
+  const glideTo = useCallback((t: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    cancelAnimationFrame(anim.current);
+    const from = el.scrollLeft;
+    const to = t * ppsRef.current;
+    if (Math.abs(to - from) < 1) { hold.current = false; setScroll(to); return; }
+    hold.current = true;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / 220);
+      setScroll(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) anim.current = requestAnimationFrame(step);
+      else hold.current = false;
+    };
+    anim.current = requestAnimationFrame(step);
+  }, [setScroll]);
+  useEffect(() => () => cancelAnimationFrame(anim.current), []);
 
-  // Keep the playhead in view while playing.
+  const raf = useRef(0);
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (!raf.current) raf.current = requestAnimationFrame(() => { raf.current = 0; setScrollX(el.scrollLeft); });
+    if (hold.current || Math.abs(el.scrollLeft - lastSet.current) < 1.6) return; // our own scroll
+    lastSet.current = el.scrollLeft;
+    if (playingRef.current) onTogglePlay(); // scrubbing pauses, like any editor
+    onSeek(clamp(el.scrollLeft / ppsRef.current, 0, duration));
+  };
+
+  const applyZoom = useCallback((next: number) => setZoom(clamp(next, MIN_ZOOM, MAX_ZOOM)), []);
+
+  // Ctrl/⌘ + wheel zooms around the playhead; a plain vertical wheel scrubs. Needs a non-passive listener.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !playing || zoom <= 1) return;
-    const x = current * pps + 16;
-    if (x < el.scrollLeft + 30 || x > el.scrollLeft + el.clientWidth - 30) el.scrollLeft = x - el.clientWidth / 2;
-  }, [current, playing, pps, zoom]);
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setZoom((z) => clamp(z * (e.deltaY < 0 ? 1.2 : 1 / 1.2), MIN_ZOOM, MAX_ZOOM));
+      } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const timeAt = useCallback((clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    return clamp((clientX - rect.left - pad) / ppsRef.current, 0, duration);
+  }, [pad, duration]);
 
   const setStart = (t: number) => { const s = clamp(t, 0, end - MIN_GAP); onChange(s, end); return s; };
   const setEnd = (t: number) => { const e = clamp(t, start + MIN_GAP, duration); onChange(start, e); return e; };
 
-  // ---- handle / playhead dragging (pointer capture keeps the drag alive off-element, mouse or touch) ----
-  const beginDrag = (which: "start" | "end" | "head", e: React.PointerEvent) => {
+  // ---- start/end handles: the track stays still while dragging, then glides the handle under the playhead ----
+  const beginDrag = (which: "start" | "end", e: React.PointerEvent) => {
     if (disabled) return;
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    if (which !== "head") setActive(which);
-    const base = which === "start" ? start : which === "end" ? end : current;
-    drag.current = { which, offset: timeAt(e.clientX) - base };
+    if (playingRef.current) onTogglePlay();
+    cancelAnimationFrame(anim.current);
+    hold.current = true;
+    setActive(which);
+    setDragging(which);
+    drag.current = { which, offset: timeAt(e.clientX) - (which === "start" ? start : end) };
   };
   const moveDrag = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
     const t = timeAt(e.clientX) - d.offset;
-    if (d.which === "start") onSeek(setStart(t));
-    else if (d.which === "end") onSeek(setEnd(t));
-    else onSeek(clamp(t, 0, duration));
+    onSeek(d.which === "start" ? setStart(t) : setEnd(t));
   };
-  const endDrag = () => { drag.current = null; };
+  const endDrag = () => {
+    if (!drag.current) return;
+    const t = drag.current.which === "start" ? start : end;
+    drag.current = null;
+    setDragging(null);
+    glideTo(t);
+  };
 
   const onKey = (which: "start" | "end") => (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 1 : 0.1;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
+      e.stopPropagation();
       const delta = (e.key === "ArrowLeft" ? -1 : 1) * step;
-      const t = which === "start" ? setStart(start + delta) : setEnd(end + delta);
-      onSeek(t);
+      onSeek(which === "start" ? setStart(start + delta) : setEnd(end + delta));
     }
   };
 
-  // ---- tap on the track = seek; two fingers = pinch zoom ----
+  // Shortcuts on the focused timeline: Space play/pause, ←/→ step, I/O set in/out (Premiere-style), Home/End.
+  const onTimelineKey = (e: React.KeyboardEvent) => {
+    if (disabled || e.target !== e.currentTarget) return;
+    const k = e.key.toLowerCase();
+    if (k === " ") { e.preventDefault(); onTogglePlay(); }
+    else if (k === "arrowleft" || k === "arrowright") { e.preventDefault(); onSeek(clamp(current + (k === "arrowleft" ? -1 : 1) * (e.shiftKey ? 1 : 0.1), 0, duration)); }
+    else if (k === "i") { e.preventDefault(); setActive("start"); setStart(current); }
+    else if (k === "o") { e.preventDefault(); setActive("end"); setEnd(current); }
+    else if (k === "home") { e.preventDefault(); onSeek(start); }
+    else if (k === "end") { e.preventDefault(); onSeek(end); }
+    else if (k === "+" || k === "=") { e.preventDefault(); applyZoom(zoom * 1.5); }
+    else if (k === "-") { e.preventDefault(); applyZoom(zoom / 1.5); }
+  };
+
+  // ---- track: mouse drag pans (scrubs), a tap seeks there, two fingers pinch-zoom ----
   const onTrackDown = (e: React.PointerEvent) => {
     if (disabled) return;
     if (e.pointerType === "touch") {
@@ -170,11 +238,14 @@ export function TrimBar({
         const [a, b] = [...p.pointers.values()];
         p.startDist = Math.abs(a - b) || 1;
         p.startZoom = zoom;
-        tap.current = null;
+        pan.current = null;
       }
       pinch.current = p;
     }
-    tap.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+    if (!pinch.current || pinch.current.pointers.size < 2) {
+      pan.current = { x: e.clientX, left: scrollRef.current!.scrollLeft, moved: false, id: e.pointerId };
+      if (e.pointerType === "mouse") (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    }
   };
   const onTrackMove = (e: React.PointerEvent) => {
     const p = pinch.current;
@@ -185,31 +256,34 @@ export function TrimBar({
         applyZoom(p.startZoom * (Math.abs(a - b) / p.startDist));
       }
     }
-    if (tap.current && Math.abs(e.clientX - tap.current.x) > 8) tap.current = null;
+    const pn = pan.current;
+    if (!pn || pn.id !== e.pointerId) return;
+    if (Math.abs(e.clientX - pn.x) > 4) pn.moved = true;
+    // Touch pans natively (touch-action: pan-x); the mouse pans here.
+    if (pn.moved && e.pointerType === "mouse") scrollRef.current!.scrollLeft = pn.left - (e.clientX - pn.x);
   };
   const onTrackUp = (e: React.PointerEvent) => {
     const p = pinch.current;
     if (p) { p.pointers.delete(e.pointerId); if (p.pointers.size === 0) pinch.current = null; }
-    const tp = tap.current;
-    tap.current = null;
-    if (tp && tp.id === e.pointerId && performance.now() - tp.t < 500 && Math.abs(e.clientX - tp.x) < 8) {
-      onSeek(timeAt(e.clientX));
+    const pn = pan.current;
+    pan.current = null;
+    if (pn && pn.id === e.pointerId && !pn.moved && e.type === "pointerup") {
+      const t = timeAt(e.clientX);
+      onSeek(t);
+      glideTo(t);
     }
   };
 
-  const onWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      applyZoom(zoom * (e.deltaY < 0 ? 1.25 : 0.8));
-    }
-  };
+  const contentW = viewW + duration * pps;
+  const visFrom = Math.max(0, (scrollX - pad - 200) / pps);
+  const visTo = (scrollX + pad + 200) / pps;
 
-  const ticks = useMemo(() => {
-    const step = STEPS.find((s) => s * pps >= 64) ?? STEPS[STEPS.length - 1];
-    const out: { t: number; label: string }[] = [];
-    for (let t = 0; t <= duration + 1e-6; t += step) out.push({ t, label: fmtTime(t, step < 1 ? 1 : 0) });
-    return out;
-  }, [pps, duration]);
+  const { major, minor } = useMemo(() => {
+    const m = STEPS.find((s) => s * pps >= 56) ?? STEPS[STEPS.length - 1];
+    return { major: m, minor: m / (m >= 1 && m % 5 === 0 ? 5 : m >= 1 && m % 2 === 0 ? 4 : 5) };
+  }, [pps]);
+  const ticks: number[] = [];
+  for (let t = Math.floor(visFrom / major) * major; t <= Math.min(duration, visTo) + 1e-6; t += major) if (t >= 0) ticks.push(t);
 
   const wave = useMemo(() => {
     if (!peaks || peaks.length === 0) return "";
@@ -221,108 +295,119 @@ export function TrimBar({
     return d;
   }, [peaks]);
 
+  const x0 = pad;
+  const dragT = dragging === "start" ? start : dragging === "end" ? end : null;
+
   return (
     <div className={`trim${disabled ? " is-disabled" : ""}${mode === "remove" ? " is-remove" : ""}`}>
       <div className="trim-transport">
+        <button type="button" className="trim-iconbtn" onClick={() => onSeek(start)} disabled={disabled} aria-label={tr("Về điểm bắt đầu", "Go to start point")} title={tr("Về điểm bắt đầu (Home)", "Go to start point (Home)")}>
+          <SkipBack size={17} />
+        </button>
         <button type="button" className="trim-play" onClick={onTogglePlay} disabled={disabled} aria-label={playing ? tr("Tạm dừng", "Pause") : tr("Phát đoạn đã chọn", "Play selection")}>
           {playing ? <Pause size={20} /> : <Play size={20} />}
           <span>{playing ? tr("Tạm dừng", "Pause") : mode === "remove" ? tr("Nghe đoạn sẽ xóa", "Preview removed part") : tr("Phát đoạn chọn", "Play selection")}</span>
+        </button>
+        <button type="button" className="trim-iconbtn" onClick={() => onSeek(end)} disabled={disabled} aria-label={tr("Tới điểm kết thúc", "Go to end point")} title={tr("Tới điểm kết thúc (End)", "Go to end point (End)")}>
+          <SkipForward size={17} />
         </button>
         <button type="button" className={`trim-loop${loop ? " is-on" : ""}`} onClick={() => onLoopChange(!loop)} aria-pressed={loop} title={tr("Lặp lại đoạn đã chọn", "Loop the selection")}>
           <Repeat size={16} /> <span>{tr("Lặp", "Loop")}</span>
         </button>
         <span className="trim-clock" aria-live="off">
-          {fmtTime(current, 1)} <em>/ {fmtTime(duration, 1)}</em>
+          {fmtTime(current, 2)} <em>/ {fmtTime(duration, 2)}</em>
         </span>
       </div>
 
-      <div className="trim-scroll" ref={scrollRef} onWheel={onWheel}>
+      <div className="trim-view">
         <div
-          className="trim-track"
-          ref={trackRef}
-          style={{ width: trackW }}
-          onPointerDown={onTrackDown}
-          onPointerMove={onTrackMove}
-          onPointerUp={onTrackUp}
-          onPointerCancel={onTrackUp}
+          className="trim-scroll"
+          ref={scrollRef}
+          onScroll={onScroll}
+          tabIndex={0}
+          onKeyDown={onTimelineKey}
+          aria-label={tr("Dòng thời gian — Space: phát/dừng, ←/→: tua, I/O: đặt đầu/cuối", "Timeline — Space: play/pause, ←/→: step, I/O: set in/out")}
         >
-          <div className="trim-ruler">
-            {ticks.map((k) => (
-              <span key={k.t} style={{ left: k.t * pps }}>{k.label}</span>
-            ))}
-          </div>
-
-          <div className="trim-strip">
-            {thumbs && thumbs.length > 0 && (
-              <div className="trim-thumbs">
-                {thumbs.map((src, i) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={i} src={src} alt="" draggable={false} />
-                ))}
-              </div>
-            )}
-            {wave && (
-              <svg className="trim-wave" viewBox={`0 0 ${peaks!.length} 100`} preserveAspectRatio="none" aria-hidden>
-                <path d={wave} />
-              </svg>
-            )}
-            <div className="trim-dim" style={{ left: 0, width: start * pps }} />
-            <div className="trim-dim" style={{ left: end * pps, width: Math.max(0, (duration - end) * pps) }} />
-            <div className="trim-frame" style={{ left: start * pps, width: Math.max(2, (end - start) * pps) }} />
-
-            <div
-              className="trim-handle is-start"
-              role="slider"
-              tabIndex={0}
-              aria-label={tr("Điểm bắt đầu", "Start point")}
-              aria-valuemin={0}
-              aria-valuemax={duration}
-              aria-valuenow={start}
-              aria-valuetext={fmtTime(start, 2)}
-              style={{ left: start * pps }}
-              onPointerDown={(e) => beginDrag("start", e)}
-              onPointerMove={moveDrag}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
-              onKeyDown={onKey("start")}
-            ><i /></div>
-            <div
-              className="trim-handle is-end"
-              role="slider"
-              tabIndex={0}
-              aria-label={tr("Điểm kết thúc", "End point")}
-              aria-valuemin={0}
-              aria-valuemax={duration}
-              aria-valuenow={end}
-              aria-valuetext={fmtTime(end, 2)}
-              style={{ left: end * pps }}
-              onPointerDown={(e) => beginDrag("end", e)}
-              onPointerMove={moveDrag}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
-              onKeyDown={onKey("end")}
-            ><i /></div>
-          </div>
-
           <div
-            className="trim-head"
-            style={{ left: current * pps }}
-            onPointerDown={(e) => beginDrag("head", e)}
-            onPointerMove={moveDrag}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
+            className="trim-track"
+            ref={trackRef}
+            style={{ width: contentW }}
+            onPointerDown={onTrackDown}
+            onPointerMove={onTrackMove}
+            onPointerUp={onTrackUp}
+            onPointerCancel={onTrackUp}
           >
-            <b />
+            <div
+              className="trim-ruler"
+              style={{
+                left: x0,
+                width: duration * pps,
+                backgroundSize: `${minor * pps}px 5px`,
+              }}
+            >
+              {ticks.map((t) => (
+                <span key={t} style={{ left: t * pps }}>{fmtTime(t, major < 1 ? 1 : 0)}</span>
+              ))}
+            </div>
+
+            <div className="trim-strip" style={{ left: x0, width: duration * pps }}>
+              {thumbs && thumbs.length > 0 && (
+                <div className="trim-thumbs">
+                  {thumbs.map((src, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={i} src={src} alt="" draggable={false} />
+                  ))}
+                </div>
+              )}
+              {wave && (
+                <svg className="trim-wave" viewBox={`0 0 ${peaks!.length} 100`} preserveAspectRatio="none" aria-hidden>
+                  <path d={wave} />
+                </svg>
+              )}
+              <div className="trim-dim" style={{ left: 0, width: start * pps }} />
+              <div className="trim-dim" style={{ left: end * pps, width: Math.max(0, (duration - end) * pps) }} />
+              <div className="trim-frame" style={{ left: start * pps, width: Math.max(2, (end - start) * pps) }} />
+
+              {(["start", "end"] as const).map((which) => {
+                const t = which === "start" ? start : end;
+                return (
+                  <div
+                    key={which}
+                    className={`trim-handle is-${which}${active === which ? " is-active" : ""}`}
+                    role="slider"
+                    tabIndex={0}
+                    aria-label={which === "start" ? tr("Điểm bắt đầu", "Start point") : tr("Điểm kết thúc", "End point")}
+                    aria-valuemin={0}
+                    aria-valuemax={duration}
+                    aria-valuenow={t}
+                    aria-valuetext={fmtTime(t, 2)}
+                    style={{ left: t * pps }}
+                    onPointerDown={(e) => beginDrag(which, e)}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                    onFocus={() => setActive(which)}
+                    onKeyDown={onKey(which)}
+                  ><i /></div>
+                );
+              })}
+              {dragT !== null && (
+                <div className="trim-drag-tip" style={{ left: dragT * pps }}>{fmtTime(dragT, 2)}</div>
+              )}
+            </div>
           </div>
+        </div>
+        <div className={`trim-playhead${dragging ? " is-faded" : ""}`} aria-hidden>
+          <span className="trim-playhead-time">{fmtTime(current, 2)}</span>
         </div>
       </div>
 
       <div className="trim-zoom">
-        <button type="button" onClick={() => applyZoom(zoom / 1.6)} disabled={zoom <= 1} aria-label={tr("Thu nhỏ", "Zoom out")}><ZoomOut size={16} /></button>
-        <input type="range" min={0} max={100} value={Math.round((Math.log(zoom) / Math.log(80)) * 100)} onChange={(e) => applyZoom(Math.pow(80, Number(e.target.value) / 100))} aria-label={tr("Phóng to thanh thời gian", "Zoom the timeline")} />
-        <button type="button" onClick={() => applyZoom(zoom * 1.6)} disabled={zoom >= 80} aria-label={tr("Phóng to", "Zoom in")}><ZoomIn size={16} /></button>
-        <button type="button" onClick={() => applyZoom(1)} aria-label={tr("Vừa khung", "Fit to view")}><Maximize2 size={15} /></button>
-        <span className="trim-zoom-hint">{tr("Chụm 2 ngón hoặc Ctrl + lăn chuột để phóng to", "Pinch with two fingers or Ctrl + scroll to zoom")}</span>
+        <button type="button" onClick={() => applyZoom(zoom / 1.6)} disabled={zoom <= MIN_ZOOM} aria-label={tr("Thu nhỏ", "Zoom out")}><ZoomOut size={16} /></button>
+        <input type="range" min={0} max={100} value={Math.round((Math.log(zoom / MIN_ZOOM) / Math.log(MAX_ZOOM / MIN_ZOOM)) * 100)} onChange={(e) => applyZoom(MIN_ZOOM * Math.pow(MAX_ZOOM / MIN_ZOOM, Number(e.target.value) / 100))} aria-label={tr("Phóng to thanh thời gian", "Zoom the timeline")} />
+        <button type="button" onClick={() => applyZoom(zoom * 1.6)} disabled={zoom >= MAX_ZOOM} aria-label={tr("Phóng to", "Zoom in")}><ZoomIn size={16} /></button>
+        <button type="button" onClick={() => applyZoom(MIN_ZOOM)} aria-label={tr("Vừa khung", "Fit to view")} title={tr("Vừa khung", "Fit to view")}><Maximize2 size={15} /></button>
+        <span className="trim-zoom-hint">{tr("Kéo hoặc lăn chuột để tua · Ctrl + lăn để phóng to · Space phát · I/O đặt đầu/cuối", "Drag or scroll to scrub · Ctrl + scroll to zoom · Space play · I/O set in/out")}</span>
       </div>
 
       <div className="trim-panel">
@@ -343,7 +428,7 @@ export function TrimBar({
         </div>
         <div className="trim-actions">
           <button type="button" className="trim-sethere" onClick={() => (active === "start" ? setStart(current) : setEnd(current))}>
-            <Crosshair size={14} /> {active === "start" ? tr("Đặt bắt đầu tại vị trí đang xem", "Set start at playhead") : tr("Đặt kết thúc tại vị trí đang xem", "Set end at playhead")}
+            <Crosshair size={14} /> {active === "start" ? tr("Đặt bắt đầu tại vạch đỏ (I)", "Set start at playhead (I)") : tr("Đặt kết thúc tại vạch đỏ (O)", "Set end at playhead (O)")}
           </button>
           <button type="button" className="trim-sethere" onClick={() => onChange(0, duration)}>{tr("Chọn toàn bộ", "Select all")}</button>
         </div>

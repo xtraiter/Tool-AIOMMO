@@ -21,8 +21,8 @@ const MODES: { id: ModeId; icon: typeof FileText; vi: string; en: string; hintVi
     formats: [{ id: "docx", label: "Word" }, { id: "png", label: "PNG" }, { id: "jpg", label: "JPG" }, { id: "txt", label: "TXT" }] },
   { id: "image", icon: ImageIcon, vi: "Hình ảnh", en: "Images", hintVi: "Chọn một hoặc nhiều ảnh", hintEn: "Choose one or more images", accept: "image/*", multiple: true,
     formats: [{ id: "pdf", label: "PDF" }, { id: "png", label: "PNG" }, { id: "jpg", label: "JPG", needsQuality: true }, { id: "webp", label: "WebP", needsQuality: true }] },
-  { id: "video", icon: Film, vi: "Video", en: "Video", hintVi: "Chọn file video", hintEn: "Choose a video file", accept: "video/*,.mp4,.mov,.mkv,.webm,.avi,.m4v", multiple: false,
-    formats: [{ id: "mp4", label: "MP4" }, { id: "webm", label: "WebM" }, { id: "gif", label: "GIF" }] },
+  { id: "video", icon: Film, vi: "Video", en: "Video", hintVi: "Chọn file video", hintEn: "Choose a video file", accept: "video/*,.mp4,.mov,.mkv,.webm,.avi,.m4v,.flv,.wmv,.3gp,.ts,.mts", multiple: false,
+    formats: [{ id: "mp4", label: "MP4" }, { id: "mov", label: "MOV" }, { id: "mkv", label: "MKV" }, { id: "webm", label: "WebM" }, { id: "avi", label: "AVI" }, { id: "gif", label: "GIF" }, { id: "webp", label: "WebP động" }, { id: "mp3", label: "MP3 (tách tiếng)" }] },
   { id: "audio_conv", icon: Music2, vi: "Âm thanh", en: "Audio", hintVi: "Chọn file âm thanh hoặc video để trích âm", hintEn: "Choose an audio or video file to extract audio", accept: "audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus,.mp4,.mkv,.webm", multiple: false,
     formats: [{ id: "mp3", label: "MP3" }, { id: "wav", label: "WAV" }, { id: "m4a", label: "M4A" }, { id: "aac", label: "AAC" }] },
 ];
@@ -50,8 +50,8 @@ const MODE_META: Record<ModeId, { titleVi: string; titleEn: string; subVi: strin
   video: {
     titleVi: "Chuyển Đổi Định Dạng Video",
     titleEn: "Video Format Converter",
-    subVi: "Đổi video sang MP4, WebM hoặc GIF ngay trên trình duyệt, không cần cài phần mềm. Video dài sẽ xử lý lâu hơn.",
-    subEn: "Convert video to MP4, WebM, or GIF directly in the browser. Longer videos take more time to process.",
+    subVi: "Đổi video sang MP4, MOV, MKV, WebM, AVI, GIF, WebP động hoặc tách tiếng MP3; đổi độ phân giải, cắt khung 9:16 / 1:1 cho TikTok, Reels. Chạy ngay trên trình duyệt, không cần cài phần mềm.",
+    subEn: "Convert video to MP4, MOV, MKV, WebM, AVI, GIF, animated WebP or extract MP3; resize and crop to 9:16 / 1:1 for TikTok & Reels. Runs right in your browser.",
   },
   audio_conv: {
     titleVi: "Chuyển Đổi Định Dạng Âm Thanh",
@@ -78,6 +78,7 @@ export function FileConverter({ initialTab }: { initialTab?: ModeId }) {
   const [files, setFiles] = useState<File[]>([]);
   const [quality, setQuality] = useState(90);
   const [scale, setScale] = useState(2);
+  const [videoOpts, setVideoOpts] = useState<E.VideoOpts>({ height: 0, aspect: "original", quality: "medium" });
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ pct: number | null; label: string } | null>(null);
   const [results, setResults] = useState<E.Out[]>([]);
@@ -110,7 +111,7 @@ export function FileConverter({ initialTab }: { initialTab?: ModeId }) {
       if (modeId === "doc") return /\.docx$/i.test(f.name);
       if (modeId === "pdf") return /\.pdf$/i.test(f.name) || f.type === "application/pdf";
       if (modeId === "image") return f.type.startsWith("image/") || /\.(jpe?g|png|webp|bmp|gif|avif)$/i.test(f.name);
-      if (modeId === "video") return /^video\//.test(f.type) || /\.(mp4|mov|mkv|webm|avi|m4v)$/i.test(f.name);
+      if (modeId === "video") return /^video\//.test(f.type) || /\.(mp4|mov|mkv|webm|avi|m4v|flv|wmv|3gp|ts|mts)$/i.test(f.name);
       // audio_conv: accepts audio and video (for audio extraction)
       return /^(video|audio)\//.test(f.type) || /\.(mp4|mov|mkv|webm|avi|mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(f.name);
     });
@@ -164,7 +165,7 @@ export function FileConverter({ initialTab }: { initialTab?: ModeId }) {
         out = fmt.id === "pdf" ? await E.imagesToPdf(files, onP) : await E.imagesToFormat(files, fmt.id as "png" | "jpg" | "webp", quality / 100, onP);
       } else {
         // video or audio_conv → use media engine
-        out = await E.convertMedia(files[0], fmt.id as E.MediaFmt, onP);
+        out = await E.convertMedia(files[0], fmt.id as E.MediaFmt, onP, modeId === "video" ? videoOpts : undefined);
       }
       setResults(out);
     } catch (e) {
@@ -261,8 +262,44 @@ export function FileConverter({ initialTab }: { initialTab?: ModeId }) {
         {modeId === "doc" && fmt.id === "pdf" && (
           <p className="cv-note">{tr("Word → PDF được xử lý thông qua Server bằng LibreOffice giúp giữ nguyên 100% bố cục và font chữ. File được tự động xóa ngay sau khi chuyển đổi.", "Word → PDF is processed via Server using LibreOffice to preserve 100% layout and fonts. Files are auto-deleted immediately after conversion.")}</p>
         )}
+        {modeId === "video" && !E.isAudioFmt(fmt.id as E.MediaFmt) && (
+          <div className="dl-selects cv-video-opts">
+            <div className="tool-field">
+              <label>{tr("Độ phân giải", "Resolution")}</label>
+              <select value={videoOpts.height} disabled={busy} onChange={(e) => setVideoOpts((o) => ({ ...o, height: Number(e.target.value) }))}>
+                <option value={0}>{tr("Giữ nguyên", "Original")}</option>
+                {[1080, 720, 480, 360].map((h) => <option key={h} value={h}>{h}p</option>)}
+              </select>
+            </div>
+            <div className="tool-field">
+              <label>{tr("Khung hình", "Aspect ratio")}</label>
+              <select value={videoOpts.aspect} disabled={busy} onChange={(e) => setVideoOpts((o) => ({ ...o, aspect: e.target.value }))}>
+                <option value="original">{tr("Giữ nguyên", "Original")}</option>
+                <option value="9:16">9:16 — TikTok, Reels, Shorts</option>
+                <option value="1:1">1:1 — {tr("Vuông", "Square")}</option>
+                <option value="4:5">4:5 — Facebook, Instagram</option>
+                <option value="16:9">16:9 — YouTube</option>
+              </select>
+            </div>
+            <div className="tool-field">
+              <label>{tr("Chất lượng", "Quality")}</label>
+              <select value={videoOpts.quality} disabled={busy} onChange={(e) => setVideoOpts((o) => ({ ...o, quality: e.target.value as E.VideoQuality }))}>
+                <option value="copy">{tr("Giữ gốc (nhanh nhất)", "Keep original (fastest)")}</option>
+                <option value="high">{tr("Cao", "High")}</option>
+                <option value="medium">{tr("Cân bằng", "Balanced")}</option>
+                <option value="low">{tr("Nhẹ (file nhỏ)", "Light (small file)")}</option>
+              </select>
+            </div>
+          </div>
+        )}
         {modeId === "video" && (
-          <p className="cv-note">{tr("Video dài hoặc nặng sẽ chuyển chậm vì chạy trên trình duyệt. GIF chỉ nên dùng cho clip ngắn dưới 15 giây.", "Long or heavy videos convert slowly because it runs in the browser. Use GIF only for short clips under 15 seconds.")}</p>
+          <p className="cv-note">
+            {E.isAudioFmt(fmt.id as E.MediaFmt)
+              ? tr("Tách toàn bộ âm thanh của video ra file MP3 192kbps.", "Extracts the whole soundtrack to a 192 kbps MP3.")
+              : videoOpts.quality === "copy" && ["mp4", "mov", "mkv"].includes(fmt.id) && videoOpts.height === 0 && videoOpts.aspect === "original"
+                ? tr("Giữ gốc: chỉ đổi vỏ file, không mã hoá lại — xong trong vài giây kể cả video dài. Nếu không được sẽ tự mã hoá lại.", "Keep original: only the container changes, no re-encoding — seconds even for long videos. Falls back to re-encoding if needed.")
+                : tr("Video dài hoặc nặng sẽ chuyển chậm vì chạy trên trình duyệt. GIF / WebP động chỉ nên dùng cho clip ngắn dưới 15 giây.", "Long or heavy videos convert slowly because it runs in the browser. Use GIF / animated WebP only for short clips under 15 seconds.")}
+          </p>
         )}
         {modeId === "audio_conv" && (
           <p className="cv-note">{tr("Nếu chọn file video, phần âm thanh sẽ được trích xuất và chuyển sang định dạng đã chọn.", "If you select a video file, the audio track will be extracted and converted to the chosen format.")}</p>

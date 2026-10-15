@@ -25,3 +25,5 @@
 .cv-res-head h2 { margin: 0; font-size: 15px; }
 .cv-res-head h2 span { margin-left: 6px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .cv-sm { padding: 7px 12px; font-size: 12.5px; }
+
+.cv-video-opts { margin-top: 14px; }

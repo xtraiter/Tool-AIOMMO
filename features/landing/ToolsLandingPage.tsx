@@ -46,30 +46,34 @@ function ToolCard({
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
       onClick={(e) => {
-        if (external || !onSelectTool) return;
+        if (external || feature.standalone || !onSelectTool) return;
         // Keep ctrl/cmd/middle-click "open in new tab" working.
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         onSelectTool(feature.slug, source);
       }}
     >
-      {feature.badge && (
-        <span className={`tl-badge-new ${external ? "is-premium" : ""}`}>
-          {external && <Crown size={10} />} {badgeLabel(feature.badge, locale)}
-        </span>
-      )}
-      <span className="tl-card-icon" style={{ ["--icon-color" as string]: colorForSlug(feature.slug) }}><Icon size={20} /></span>
-      <h3>{featureName(feature.slug, feature.name, locale)}</h3>
-      <p>{featureDescription(feature.slug, feature.description, locale)}</p>
-      {external ? (
-        <span className="tl-card-cta-btn">
-          <Crown size={13} /> {locale === "en" ? "Register now — Free" : "Đăng ký ngay — Miễn phí"} <ArrowUpRight size={14} />
-        </span>
-      ) : (
-        <span className="tl-card-cta">
-          {locale === "en" ? "Open tool" : "Mở công cụ"} <ArrowRight size={14} />
-        </span>
-      )}
+      <span className="tl-card-cover" style={{ ["--icon-color" as string]: colorForSlug(feature.slug) }}>
+        {feature.badge && (
+          <span className={`tl-badge-new ${external ? "is-premium" : ""}`}>
+            {external && <Crown size={10} />} {badgeLabel(feature.badge, locale)}
+          </span>
+        )}
+        <span className="tl-card-icon"><Icon size={30} strokeWidth={1.8} /></span>
+      </span>
+      <span className="tl-card-body">
+        <h3>{featureName(feature.slug, feature.name, locale)}</h3>
+        <p>{featureDescription(feature.slug, feature.description, locale)}</p>
+        {external ? (
+          <span className="tl-card-cta-btn">
+            <Crown size={13} /> {locale === "en" ? "Register now — Free" : "Đăng ký ngay — Miễn phí"} <ArrowUpRight size={14} />
+          </span>
+        ) : (
+          <span className="tl-card-cta">
+            {locale === "en" ? "Open tool" : "Mở công cụ"} <ArrowRight size={14} />
+          </span>
+        )}
+      </span>
     </a>
   );
 }
@@ -102,7 +106,7 @@ function SiteTraffic({ locale }: { locale: UiLocale }) {
       <span className="tl-traffic-item">
         <span className="tl-online-dot" aria-hidden />
         {/* The person reading this is online too, even before their first ping lands. */}
-        {locale === "en" ? "Online now" : "Đang truy cập"}: <b>{fmt(stats && Math.max(1, stats.online))}</b>
+        {locale === "en" ? "Online now" : "Đang truy cập"}: <b>{fmt(stats ? Math.max(1, stats.online) : undefined)}</b>
       </span>
     </div>
   );

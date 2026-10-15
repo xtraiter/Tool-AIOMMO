@@ -1,382 +1,110 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertPublicHttpUrl, safeFetchText, safeFetchPage } from "@/lib/safeUrl";
+import { assertPublicHttpUrl, safeFetchText } from "@/lib/safeUrl";
 import { rateLimited } from "@/lib/rateLimit";
-import { parseTikTokShop, type ProductInfo } from "@/lib/tiktokShop";
+import { parseTikTokShop, parseTikTokProductUrl, type ProductInfo } from "@/lib/tiktokShop";
+import { parseShopee, parseShopeeIds } from "@/lib/shopee";
+import { browserFetch } from "@/lib/browserFetch";
 import { mediaProxyUrl } from "@/lib/signedUrl";
 import { detectPlatform as detectSite } from "@/lib/platforms";
 
 // Detect platform from URL
 function detectPlatform(url: string): "shopee" | "tiktok_shop" | "lazada" | "unknown" {
-  if (url.includes("shopee.vn") || url.includes("shopee.com") || url.includes("shp.ee") || url.includes("s.shopee.vn")) return "shopee";
+  const host = (() => { try { return new URL(url).hostname; } catch { return ""; } })();
+  if (/(^|\.)(shopee\.vn|shopee\.com|shp\.ee)$/.test(host)) return "shopee";
   if (
-    url.includes("shop.tiktok.com") ||
-    url.includes("vt.tiktok.com") ||
-    (url.includes("tiktok.com") && (url.includes("/product") || url.includes("/pdp/") || url.includes("/view/product")))
+    host === "shop.tiktok.com" ||
+    host === "vt.tiktok.com" ||
+    (host.endsWith("tiktok.com") && /\/(product|pdp|view\/product)\//.test(url))
   )
     return "tiktok_shop";
   if (url.includes("lazada.vn") || url.includes("lazada.com")) return "lazada";
   return "unknown";
 }
 
-// Desktop Chrome UA
+// Desktop Chrome UA — short links answer it with a plain 301 (mobile gets an "open in app" page)
 const UA_DESKTOP =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 // Mobile UA (Android)
 const UA_MOBILE =
   "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
-const BASE_HEADERS: Record<string, string> = {
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-  "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
-  "Accept-Encoding": "gzip, deflate, br",
-  "Cache-Control": "no-cache",
-  "Sec-Fetch-Dest": "document",
-  "Sec-Fetch-Mode": "navigate",
-  "Sec-Fetch-Site": "none",
-  "Upgrade-Insecure-Requests": "1",
-};
-
-/** Extract shopid & itemid from any Shopee URL format */
-function parseShopeeIds(url: string): { shopid: string; itemid: string } | null {
-  // Format: /product/{shopid}/{itemid}
-  let m = url.match(/\/product\/(\d+)\/(\d+)/);
-  if (m) return { shopid: m[1], itemid: m[2] };
-  // Format: -i.{shopid}.{itemid} (standard product URL)
-  m = url.match(/-i\.(\d+)\.(\d+)/);
-  if (m) return { shopid: m[1], itemid: m[2] };
-  // Format: i.{shopid}.{itemid} in the path
-  m = url.match(/[?&i]\.(\d+)\.(\d+)/);
-  if (m) return { shopid: m[1], itemid: m[2] };
-  return null;
-}
-
-/** Extract product title from Shopee URL slug */
-function titleFromShopeeUrl(url: string): string {
-  try {
-    const decoded = decodeURIComponent(url);
-    // Pattern: /SlugWithDashes-i.shopid.itemid
-    const m = decoded.match(/shopee\.vn\/([^/]+)-i\.\d+\.\d+/);
-    if (m) {
-      return m[1]
-        .replace(/-/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    }
-    // /product/ format - no slug
-    const m2 = decoded.match(/shopee\.vn\/([^/?#]+)/);
-    if (m2 && !m2[1].startsWith("product")) {
-      return m2[1].replace(/-/g, " ").trim();
-    }
-  } catch {}
-  return "";
-}
-
-/** Try to call Shopee API v4/item/get (works from VN IP) */
-async function callShopeeApiV4(shopid: string, itemid: string): Promise<any | null> {
-  const apiUrl = `https://shopee.vn/api/v4/item/get?itemid=${itemid}&shopid=${shopid}`;
-  const apiHeaders = {
-    "User-Agent": UA_MOBILE,
-    Accept: "application/json, text/plain, */*",
-    "Accept-Language": "vi-VN,vi;q=0.9",
-    Referer: `https://shopee.vn/product/${shopid}/${itemid}`,
-    Origin: "https://shopee.vn",
-    "x-api-source": "rn",
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-  };
-  try {
-    const { text } = await safeFetchPage(apiUrl, apiHeaders, 15000);
-    const data = JSON.parse(text);
-    if (data?.item?.name) return data.item;
-  } catch {}
-  return null;
-}
-
-/** Parse product data from Shopee's embedded __STORE__ or initialState JSON */
-function parseShopeeEmbeddedData(html: string): {
-  title?: string;
-  price?: string;
-  description?: string;
-  images?: string[];
-  shopName?: string;
-  location?: string;
-} | null {
-  try {
-    // Parse the __STORE__ JSON (escaped string inside JSON.parse(...))
-    const storeMatch = html.match(/window\.__STORE__=JSON\.parse\("((?:[^"\\]|\\.)*)"\)/);
-    if (storeMatch) {
-      const unescaped = storeMatch[1]
-        .replace(/\\"/g, '"')
-        .replace(/\\\\/g, "\\")
-        .replace(/\\n/g, "\n")
-        .replace(/\\r/g, "\r")
-        .replace(/\\t/g, "\t");
-      const store = JSON.parse(unescaped);
-      const items = store?.item?.items || {};
-      const item = Object.values(items)[0] as any;
-      if (item?.name) {
-        const images: string[] = (item.images || []).map(
-          (id: string) => `https://down-vn.img.susercontent.com/file/${id}`
-        );
-        const priceCents = item.price || item.price_min;
-        const price = priceCents ? `${(priceCents / 100000).toLocaleString("vi-VN")}đ` : "";
-        return {
-          title: item.name,
-          price,
-          description: item.description || "",
-          images,
-          shopName: item.shop_name || "",
-          location: item.shop_location || "",
-        };
-      }
-    }
-  } catch {}
-
-  try {
-    // Parse initialState (newer mobile pages)
-    const initMatch = html.match(/<script[^>]*>\s*(\{"initialState":.*?)\s*<\/script>/s);
-    if (initMatch) {
-      const data = JSON.parse(initMatch[1]);
-      const pdp = data?.initialState?.DOMAIN_PDP?.data?.PDP_BFF_DATA?.cachedMap || {};
-      const entry = Object.values(pdp)[0] as any;
-      if (entry?.product_model?.name) {
-        const pm = entry.product_model;
-        const images: string[] = (pm.images || []).map((img: any) => img?.url_list?.[0] || img?.url || "").filter(Boolean);
-        return {
-          title: pm.name,
-          price: "",
-          description: pm.description || "",
-          images,
-        };
-      }
-    }
-  } catch {}
-
-  return null;
-}
-
-/** Build Shopee image URL from image hash ID */
-function shopeeImgUrl(id: string): string {
-  return `https://down-vn.img.susercontent.com/file/${id}`;
-}
-
-async function scrapeShopee(url: string) {
-  // === Strategy 1: Direct API call (works on VN IP) ===
-  const ids = parseShopeeIds(url);
-  if (ids) {
-    const item = await callShopeeApiV4(ids.shopid, ids.itemid);
-    if (item) {
-      const images = (item.images || []).map((id: string) => shopeeImgUrl(id));
-      const priceCents = item.price || item.price_min;
-      const priceFormatted = priceCents
-        ? `${(priceCents / 100000).toLocaleString("vi-VN")}đ`
-        : "Liên hệ shop";
-      const priceMaxCents = item.price_max;
-      const priceText =
-        priceMaxCents && priceMaxCents !== priceCents
-          ? `${(priceCents / 100000).toLocaleString("vi-VN")}đ - ${(priceMaxCents / 100000).toLocaleString("vi-VN")}đ`
-          : priceFormatted;
-
-      // Parse tier variations (SKUs)
-      const tierVars = item.tier_variations || [];
-      const models = item.models || [];
-      const variants = tierVars.map((tv: any) => ({
-        name: tv.name,
-        options: (tv.options || []).map((opt: string, i: number) => ({
-          name: opt,
-          image: tv.images?.[i] ? shopeeImgUrl(tv.images[i]) : undefined,
-        })),
-      }));
-      const skus = models.map((m: any) => {
-        const priceC = m.price;
-        const optionIds = m.extinfo?.tier_index || [];
-        const optionNames = optionIds
-          .map((idx: number, vi: number) => tierVars[vi]?.options?.[idx])
-          .filter(Boolean)
-          .join(" / ");
-        return {
-          name: optionNames || m.name || "Mặc định",
-          price: priceC ? `${(priceC / 100000).toLocaleString("vi-VN")}đ` : "—",
-          stock: m.stock !== undefined ? m.stock : undefined,
-        };
-      });
-
-      // Description
-      let description = item.description || "";
-
-      // Video
-      const videos: string[] = [];
-      if (item.video_info_list) {
-        for (const v of item.video_info_list as any[]) {
-          const vu = v?.default_format?.url;
-          if (vu && typeof vu === "string" && vu.startsWith("http")) videos.push(vu);
-        }
-      }
-
-      return {
-        platform: "Shopee",
-        title: item.name.trim(),
-        price: priceText,
-        description,
-        images: images.slice(0, 12),
-        videos,
-        variants,
-        skus,
-        sold: item.historical_sold ? String(item.historical_sold) : undefined,
-        shopName: item.shop_name || "",
-        location: item.shop_location || "",
-        source_url: url,
-      };
-    }
-  }
-
-  // === Strategy 2: Fetch HTML and parse embedded data ===
-  let html = "";
-  try {
-    html = await safeFetchText(url, { "User-Agent": UA_MOBILE, ...BASE_HEADERS });
-  } catch {
-    try {
-      html = await safeFetchText(url, { "User-Agent": UA_DESKTOP, ...BASE_HEADERS });
-    } catch (e: any) {
-      throw new Error("Không thể tải trang sản phẩm Shopee: " + e.message);
-    }
-  }
-
-  // Try to parse embedded data
-  const embedded = parseShopeeEmbeddedData(html);
-  if (embedded?.title) {
-    return {
-      platform: "Shopee",
-      title: embedded.title,
-      price: embedded.price || "Xem trên Shopee",
-      description: embedded.description || "",
-      images: (embedded.images || []).slice(0, 12),
-      videos: [],
-      shopName: embedded.shopName || "",
-      location: embedded.location || "",
-      source_url: url,
-    };
-  }
-
-  // === Strategy 3: Extract title from URL slug + OG images ===
-  const slugTitle = titleFromShopeeUrl(url);
-  const ogTitle = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1];
-
-  // Detect bot wall (security check pages)
-  const pageTitle = html.match(/<title>([^<]+)<\/title>/)?.[1] || "";
-  const effectiveTitle = (ogTitle && !ogTitle.includes("Shopee Việt Nam") && !ogTitle.includes("Shopee Vietnam"))
-    ? ogTitle
-    : slugTitle;
-
-  if (!effectiveTitle || /security check|captcha|verify|xác minh/i.test(effectiveTitle)) {
-    if (slugTitle) {
-      // We have slug title but may not be able to confirm it's a valid product
-      // Return with limited data and let the UI show the bookmarklet
-    } else {
-      throw new Error(
-        "Shopee đang chặn truy cập tự động từ máy chủ (yêu cầu đăng nhập/xác minh), nên không thể lấy dữ liệu sản phẩm từ link này."
-      );
-    }
-  }
-
-  // Try to get images from og:image tags
-  const imgMatches = [...html.matchAll(/<meta property="og:image(?:[^"]+)?" content="([^"]+)"/g)];
-  const ogImages = [...new Set(imgMatches.map((m) => m[1]).filter((u) => u.includes("http")))];
-
-  // Get description from og:description
-  const description =
-    html.match(/<meta name="description" content="([^"]+)"/)?.[1] ||
-    html.match(/<meta property="og:description" content="([^"]+)"/)?.[1] ||
-    "";
-
-  const finalTitle = effectiveTitle || "Sản phẩm Shopee";
-
-  return {
-    platform: "Shopee",
-    title: decodeURIComponent(
-      finalTitle.replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"')
-    ),
-    price: "Xem trên Shopee",
-    description: description.replace(/\\n/g, "\n"),
-    images: ogImages.slice(0, 9),
-    videos: [],
-    shopName: "",
-    location: "",
-    source_url: url,
-    _partial: !embedded?.title && !ogImages.length,
-  };
-}
-
-async function scrapeTikTokShop(url: string) {
-  // Strategy 1: Desktop layout embeds __MODERN_ROUTER_DATA__ JSON
-  try {
-    const page = await safeFetchPage(url, { "User-Agent": UA_DESKTOP, ...BASE_HEADERS });
-    const product = parseTikTokShop(page.text);
-    if (product) {
-      const proxy = (u?: string) => (u ? mediaProxyUrl(u) : u);
-      const out: ProductInfo = {
-        ...product,
-        images: product.images.map((u) => mediaProxyUrl(u)),
-        videos: product.videos.map((u) => mediaProxyUrl(u)),
-        variants: product.variants.map((v) => ({
-          ...v,
-          options: v.options.map((o) => ({ ...o, image: proxy(o.image) })),
-        })),
-        skus: product.skus.map((k) => ({ ...k, image: proxy(k.image) })),
-        source_url: page.url,
-        __proxied: true,
-      } as any;
-      return out;
-    }
-    // If we got a page but couldn't parse it, check if it's a bot wall
-    const pageTitle = page.text.match(/<title>([^<]+)<\/title>/)?.[1] || "";
-    if (/security check|captcha|verify|access denied|just a moment/i.test(pageTitle + page.text.slice(0, 3000))) {
-      throw new Error(
-        `TikTok Shop đang chặn truy cập tự động từ máy chủ (trang "Security Check"), nên không lấy được dữ liệu từ link này.`
-      );
-    }
-  } catch (e: any) {
-    if (e.message?.includes("chặn") || e.message?.includes("Security Check")) throw e;
-    // Otherwise fall through to Strategy 2
-  }
-
-  // Strategy 2: Try with mobile UA
-  try {
-    const page = await safeFetchPage(url, { "User-Agent": UA_MOBILE, "Accept-Language": "vi-VN,vi;q=0.9" });
-    const product = parseTikTokShop(page.text);
-    if (product) {
-      const proxy = (u?: string) => (u ? mediaProxyUrl(u) : u);
-      return {
-        ...product,
-        images: product.images.map((u) => mediaProxyUrl(u)),
-        videos: product.videos.map((u) => mediaProxyUrl(u)),
-        variants: product.variants.map((v) => ({
-          ...v,
-          options: v.options.map((o) => ({ ...o, image: proxy(o.image) })),
-        })),
-        skus: product.skus.map((k) => ({ ...k, image: proxy(k.image) })),
-        source_url: url,
-        __proxied: true,
-      };
-    }
-    const pageTitle = page.text.match(/<title>([^<]+)<\/title>/)?.[1] || "";
-    if (/security check|captcha|verify|access denied|just a moment/i.test(pageTitle)) {
-      throw new Error(
-        `TikTok Shop đang chặn truy cập tự động từ máy chủ (trang "Security Check"), nên không lấy được dữ liệu từ link này.`
-      );
-    }
-  } catch (e: any) {
-    if (e.message?.includes("chặn") || e.message?.includes("Security Check")) throw e;
-  }
-
-  throw new Error(
-    `TikTok Shop đang chặn truy cập tự động từ máy chủ (trang "Security Check"), nên không lấy được dữ liệu từ link này.`
-  );
-}
-
 const BOT_WALL =
   /security check|captcha|verify (you|that)|access denied|just a moment|are you a robot|unusual traffic|attention required|xác minh|kiểm tra bảo mật/i;
+
+type OgInfo = { title?: string; image?: string };
+
+/**
+ * Follows a short link (s.shopee.vn, shp.ee, vt.tiktok.com) one hop at a time
+ * until the URL carries product ids. TikTok's redirect also carries og_info
+ * (title + cover), kept as a last resort if the product page is walled.
+ */
+async function resolveShortLink(href: string, hasIds: (u: string) => boolean): Promise<{ href: string; og: OgInfo }> {
+  const og: OgInfo = {};
+  let current = href;
+  for (let hop = 0; hop < 5 && !hasIds(current); hop++) {
+    const u = await assertPublicHttpUrl(current);
+    const res = await fetch(u, { redirect: "manual", headers: { "User-Agent": UA_DESKTOP }, signal: AbortSignal.timeout(15000) });
+    await res.body?.cancel();
+    const loc = res.headers.get("location");
+    if (!loc) break;
+    current = new URL(loc, u).href;
+    try {
+      const info = JSON.parse(new URL(current).searchParams.get("og_info") || "null");
+      if (info?.title) og.title = info.title;
+      if (info?.image) og.image = String(info.image).replace(/~tplv-[^?]+/, "");
+    } catch {}
+  }
+  return { href: current, og };
+}
+
+async function scrapeShopee(url: string): Promise<ProductInfo> {
+  const { href } = await resolveShortLink(url, (u) => !!parseShopeeIds(u));
+  const ids = parseShopeeIds(href);
+  if (!ids) throw new Error("Không nhận ra mã sản phẩm trong link Shopee này.");
+
+  const canonical = `https://shopee.vn/product/${ids.shopid}/${ids.itemid}`;
+  const page = await browserFetch(canonical);
+  const product = parseShopee(page.text);
+  if (product) return { ...product, source_url: canonical };
+
+  if (page.text.includes("product-not-exist")) {
+    throw new Error("Sản phẩm này không tồn tại hoặc đã bị xóa trên Shopee.");
+  }
+  const title = page.text.match(/<title>([^<]*)<\/title>/)?.[1] || "";
+  if (BOT_WALL.test(title) || page.status === 403) {
+    throw new Error("Shopee đang chặn truy cập tự động từ máy chủ, vui lòng thử lại sau ít phút.");
+  }
+  throw new Error("Không tìm thấy sản phẩm. Có thể sản phẩm đã bị xóa hoặc link không đúng.");
+}
+
+async function scrapeTikTokShop(url: string): Promise<ProductInfo> {
+  const { href, og } = await resolveShortLink(url, (u) => !!parseTikTokProductUrl(u));
+  const ids = parseTikTokProductUrl(href);
+  if (!ids) throw new Error("Không nhận ra mã sản phẩm trong link TikTok Shop này.");
+
+  // The bare /pdp/{id} URL serves the full page; the tracking params on
+  // shared links (_d, chain_key…) trigger TikTok's "Security Check" wall.
+  const canonical = `https://shop.tiktok.com/${ids.region}/pdp/${ids.id}`;
+  const page = await browserFetch(canonical);
+  const product = parseTikTokShop(page.text);
+  if (product) return { ...product, source_url: canonical };
+
+  if (og.title) {
+    return {
+      platform: "TikTok Shop",
+      title: og.title,
+      price: "Xem trên TikTok Shop",
+      description: "",
+      images: og.image ? [og.image] : [],
+      videos: [],
+      variants: [],
+      skus: [],
+      specs: [],
+      source_url: canonical,
+    };
+  }
+  throw new Error("TikTok Shop đang chặn truy cập tự động từ máy chủ (trang \"Security Check\"), vui lòng thử lại sau ít phút.");
+}
 
 async function curlFallback(url: string, platform: string) {
   const stdout = await safeFetchText(url, { "User-Agent": UA_MOBILE });
@@ -409,70 +137,20 @@ async function curlFallback(url: string, platform: string) {
   };
 }
 
-/** Extract product details via high-performance SpaiApps engine (handles Shopee, TikTok Shop, etc.) */
-async function extractViaSpaiApps(
-  targetUrl: string,
-  extraOg?: { title?: string; image?: string }
-): Promise<any | null> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch("https://tools.spaiauto.com/api.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Referer: "https://tools.spaiauto.com/",
-        Origin: "https://tools.spaiauto.com",
-        "User-Agent": UA_DESKTOP,
-      },
-      body: JSON.stringify({ action: "extract_product", url: targetUrl }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (!json.success || !json.data) return null;
-    const data = json.data;
-
-    const title = (data.title || "").trim() || extraOg?.title || "Sản phẩm";
-    let images: string[] = (data.images || []).filter(
-      (u: any) => typeof u === "string" && u.startsWith("http")
-    );
-    if (!images.length && extraOg?.image) {
-      images = [extraOg.image];
-    }
-    const videos: string[] = (data.videos || [])
-      .map((v: any) => (typeof v === "string" ? v : v?.url))
-      .filter((u: any) => typeof u === "string" && u.startsWith("http"));
-
-    const variants = (data.variations || []).map((v: any) => ({
-      name: v.group_name || v.name || "Phân loại",
-      options: (v.options || []).map((o: any) => ({
-        name: o.name,
-        image: o.image || undefined,
-      })),
-    }));
-
-    const price = data.price || data.original_price || "Xem trực tiếp trên sàn";
-
-    return {
-      platform: data.platform || "E-Commerce",
-      title,
-      price,
-      description: data.description || "",
-      images,
-      videos,
-      variants: variants.length ? variants : undefined,
-      shopName: data.shop_name || "",
-      location: data.shop_location || "",
-      source_url: data.product_url || targetUrl,
-    };
-  } catch (err) {
-    console.warn("[API/ecommerce] SpaiApps extract error:", err);
-    return null;
-  }
+/** Routes every media URL through the signed proxy to avoid hotlink blocking. */
+function proxyMedia(result: any) {
+  const p = (u?: string) => (typeof u === "string" && u.startsWith("http") ? mediaProxyUrl(u) : undefined);
+  const list = (a?: string[]) => (a ?? []).map(p).filter((u): u is string => !!u);
+  return {
+    ...result,
+    images: list(result.images),
+    videos: list(result.videos),
+    variants: result.variants?.length
+      ? result.variants.map((v: any) => ({ ...v, options: v.options.map((o: any) => ({ ...o, image: p(o.image) })) }))
+      : undefined,
+    skus: result.skus?.length ? result.skus.map((k: any) => ({ ...k, image: p(k.image) })) : undefined,
+    specs: result.specs?.length ? result.specs : undefined,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -494,94 +172,21 @@ export async function POST(req: NextRequest) {
     const safe = await assertPublicHttpUrl(cleanUrl);
     console.log(`[API/ecommerce] Đang scrape: ${safe.href}`);
 
-    let targetHref = safe.href;
-    const extraOg: { title?: string; image?: string } = {};
-
-    // If vt.tiktok.com, s.shopee.vn or shp.ee short link, inspect redirect for og_info
-    if (targetHref.includes("vt.tiktok.com") || targetHref.includes("s.shopee.vn") || targetHref.includes("shp.ee")) {
-      try {
-        const headRes = await fetch(targetHref, {
-          method: "GET",
-          redirect: "manual",
-          headers: { "User-Agent": UA_DESKTOP },
-        });
-        const loc = headRes.headers.get("location");
-        if (loc) {
-          targetHref = loc.startsWith("http") ? loc : new URL(loc, targetHref).href;
-          try {
-            const parsed = new URL(targetHref);
-            const ogStr = parsed.searchParams.get("og_info");
-            if (ogStr) {
-              const og = JSON.parse(ogStr);
-              if (og.title) extraOg.title = og.title;
-              if (og.image) extraOg.image = og.image.replace(/~tplv-[^?]+/, "");
-            }
-          } catch {}
-        }
-      } catch (err) {
-        console.warn("[API/ecommerce] Short link resolve error:", err);
-      }
+    const platform = detectPlatform(safe.href);
+    let result: any;
+    if (platform === "shopee") {
+      result = await scrapeShopee(safe.href);
+    } else if (platform === "tiktok_shop") {
+      result = await scrapeTikTokShop(safe.href);
+    } else {
+      const site = detectSite(safe.href);
+      result = await curlFallback(safe.href, site.id === "unknown" ? "E-Commerce" : site.name);
     }
 
-    // 1. Try high-performance SpaiApps engine first
-    let result = await extractViaSpaiApps(targetHref, extraOg);
-
-    // 2. If SpaiApps didn't get title or images, try platform-specific scrapers
-    if (!result || (!result.title && !result.images.length)) {
-      const platform = detectPlatform(targetHref);
-      try {
-        if (platform === "shopee") {
-          result = await scrapeShopee(targetHref);
-        } else if (platform === "tiktok_shop") {
-          result = await scrapeTikTokShop(targetHref);
-        } else {
-          const site = detectSite(targetHref);
-          result = await curlFallback(targetHref, site.id === "unknown" ? "E-Commerce" : site.name);
-        }
-      } catch (scrapingErr: any) {
-        // If TikTok was blocked by Security Check but we extracted og_info from the short link redirect:
-        if (extraOg.title) {
-          result = {
-            platform: "TikTok Shop",
-            title: extraOg.title,
-            price: "Xem trên TikTok Shop",
-            description: "",
-            images: extraOg.image ? [extraOg.image] : [],
-            videos: [],
-            source_url: targetHref,
-          };
-        } else {
-          throw scrapingErr;
-        }
-      }
-    }
-
-    // If still no title or images but we have extraOg:
-    if (result && !result.title && extraOg.title) {
-      result.title = extraOg.title;
-    }
-    if (result && (!result.images || !result.images.length) && extraOg.image) {
-      result.images = [extraOg.image];
-    }
-
-    if (!result || !result.title) {
+    if (!result?.title) {
       throw new Error("Không thể trích xuất dữ liệu từ đường dẫn này. Vui lòng kiểm tra lại liên kết.");
     }
-
-    // Route images through the signed media proxy to avoid hotlink blocking
-    // (skip if already proxied by scrapeTikTokShop)
-    if (result.images && !result.__proxied) {
-      result.images = (result.images as string[])
-        .filter((u) => typeof u === "string" && u.startsWith("http"))
-        .map((u) => mediaProxyUrl(u));
-    }
-    if (result.videos && !result.__proxied) {
-      result.videos = (result.videos as string[])
-        .filter((u) => typeof u === "string" && u.startsWith("http"))
-        .map((u) => mediaProxyUrl(u));
-    }
-    delete result.__proxied;
-    return NextResponse.json(result);
+    return NextResponse.json(proxyMedia(result));
   } catch (error: any) {
     console.error("[API/ecommerce] Error:", error);
     return NextResponse.json(

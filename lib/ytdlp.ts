@@ -1,34 +1,24 @@
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
+import { ffmpegLocation, ytDlpPath } from "@/lib/serverTools";
 
 const execFileAsync = promisify(execFile);
 
-/** Locate yt-dlp on Linux and Windows. */
-async function getYtDlpPath(): Promise<string> {
-  const candidates = [
-    "/usr/local/bin/yt-dlp",
-    "/usr/bin/yt-dlp",
-    "yt-dlp",
-    "yt-dlp.exe",
+/**
+ * Flags shared by every call. IPv4 + socket timeout avoid hangs on hosts with
+ * broken IPv6; pointing at this Node binary lets yt-dlp solve YouTube's JS
+ * challenges even when PM2's PATH lacks node; skipping format checks avoids
+ * test-downloading fragments.
+ */
+function baseArgs() {
+  const ffmpeg = ffmpegLocation();
+  return [
+    "--force-ipv4", "--socket-timeout", "20", "--js-runtimes", `node:${process.execPath}`, "--no-check-formats",
+    ...(ffmpeg ? ["--ffmpeg-location", ffmpeg] : []),
+    // Optional Netscape cookies file — Douyin, Facebook and Instagram often need one.
+    ...(process.env.YTDLP_COOKIES_FILE ? ["--cookies", process.env.YTDLP_COOKIES_FILE] : []),
   ];
-
-  for (const candidate of candidates) {
-    try {
-      await execFileAsync(candidate, ["--version"]);
-      return candidate;
-    } catch {
-      // try next
-    }
-  }
-
-  throw new Error(
-    "Không tìm thấy yt-dlp trên hệ thống. " +
-    "Trên Linux: sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && sudo chmod a+rx /usr/local/bin/yt-dlp. " +
-    "Trên Windows: winget install yt-dlp"
-  );
 }
-
-let _ytDlpPath: string | null = null;
 
 export type DownloadProgress = { percent: number; stage: "download" | "convert" };
 
@@ -43,15 +33,14 @@ export async function ytDlpDownloadWithProgress(
   onProgress: (p: DownloadProgress) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  if (!_ytDlpPath) _ytDlpPath = await getYtDlpPath();
+  const bin = await ytDlpPath();
   const args = [
-    "--force-ipv4", "--socket-timeout", "20", "--js-runtimes", "node", "--no-check-formats",
-    ...(process.env.YTDLP_COOKIES_FILE ? ["--cookies", process.env.YTDLP_COOKIES_FILE] : []),
+    ...baseArgs(),
     "--newline", "--progress-template", "download:PROG %(progress._percent_str)s",
     ...options, "--", url,
   ];
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(_ytDlpPath!, args, { windowsHide: true });
+    const child = spawn(bin, args, { windowsHide: true });
     const timer = setTimeout(() => child.kill(), 300_000);
     signal?.addEventListener("abort", () => child.kill());
     let streams = 0;
@@ -91,17 +80,9 @@ export async function ytDlpDownloadWithProgress(
 }
 
 async function run(options: string[], url: string, timeout: number) {
-  if (!_ytDlpPath) {
-    _ytDlpPath = await getYtDlpPath();
-  }
-  // IPv4 + socket timeout avoid hangs on hosts with broken IPv6; the node
-  // runtime lets yt-dlp solve YouTube's JS challenges; skipping format checks
-  // avoids test-downloading fragments.
-  const base = ["--force-ipv4", "--socket-timeout", "20", "--js-runtimes", "node", "--no-check-formats"];
-  // Optional Netscape cookies file — Douyin, Facebook and Instagram often need one.
-  if (process.env.YTDLP_COOKIES_FILE) base.push("--cookies", process.env.YTDLP_COOKIES_FILE);
+  const bin = await ytDlpPath();
   try {
-    return await execFileAsync(_ytDlpPath, [...base, ...options, "--", url], { timeout, maxBuffer: 20 * 1024 * 1024 });
+    return await execFileAsync(bin, [...baseArgs(), ...options, "--", url], { timeout, maxBuffer: 20 * 1024 * 1024 });
   } catch (err: any) {
     const detail = String(err?.stderr || "").split("\n").filter((l) => l.includes("ERROR")).pop();
     throw new Error(detail ? detail.replace(/^ERROR:\s*/, "").slice(0, 200) : "yt-dlp không lấy được dữ liệu từ link này.");

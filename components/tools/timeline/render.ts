@@ -1,3 +1,4 @@
+import { cssFont } from "@/lib/fonts";
 import { end, hasAudio, type Clip, type Media, type Project } from "./model";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -7,15 +8,13 @@ export type Pool = {
   images: Map<string, HTMLImageElement>;
 };
 
-const FONT = 'system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-
 export type TextLayout = { lines: string[]; fontPx: number; lineH: number; w: number; h: number; pad: number; font: string };
 
 /** Word-wraps a text clip to 90% of the canvas width and measures it. Shared by preview and PNG export. */
 export function layoutText(ctx: Ctx, clip: Clip, W: number, H: number): TextLayout {
   const style = clip.style!;
   const fontPx = Math.max(10, Math.round((H * style.size) / 100 * clip.scale));
-  const font = `${style.italic ? "italic " : ""}${style.bold ? "700" : "500"} ${fontPx}px ${FONT}`;
+  const font = cssFont(style.font, style.bold, style.italic, fontPx);
   ctx.font = font;
   const maxW = W * 0.9;
   const lines: string[] = [];

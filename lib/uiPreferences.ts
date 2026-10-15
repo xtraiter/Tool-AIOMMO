@@ -128,6 +128,7 @@ const ENGLISH_FEATURE_NAMES: Record<string, string> = {
   "audio.extract.audiotab": "Extract Audio From Video",
   "utility.zip": "Extract ZIP Files Online",
   "utility.convert": "File Format Converter",
+  "utility.convert.video": "Video Format Converter",
   "premium.watermark.remover": "AI Watermark Remover",
 };
 
@@ -157,6 +158,7 @@ const ENGLISH_FEATURE_DESCRIPTIONS: Record<string, string> = {
   "audio.record": "Record directly from your microphone with a real-time waveform, download the WebM file instantly.",
   "audio.extract.audiotab": "Extract the full audio track from a video to high-quality MP3.",
   "utility.zip": "View and extract the contents of a ZIP file right in your browser.",
+  "utility.convert.video": "Convert to MP4, MOV, MKV, WebM, AVI, GIF, animated WebP or extract MP3; resize and crop to 9:16 for TikTok. No install needed.",
   "utility.convert": "Convert Word to PDF, PDF to images/text, images to PDF, and image, video or audio formats right in your browser.",
   "premium.watermark.remover": "Automatically remove logos, text and watermarks from images/videos without blurring or artifacts.",
 };
@@ -204,7 +206,24 @@ const CATEGORY_LABELS: Record<string, { vi: string; en: string }> = {
   audio: { vi: "Âm Thanh", en: "Audio Tools" },
   image: { vi: "Hình Ảnh", en: "Images" },
   office: { vi: "Công Cụ Văn Phòng", en: "Office Tools" },
+  template: { vi: "Mẫu Video & Prompt AI", en: "Templates & Prompts" },
 };
+
+/** Short labels for the top bar on narrow desktops (641–1100px). */
+const CATEGORY_SHORT_LABELS: Record<string, { vi: string; en: string }> = {
+  download: { vi: "Tải Video", en: "Download" },
+  video: { vi: "Video", en: "Video" },
+  audio: { vi: "Âm Thanh", en: "Audio" },
+  image: { vi: "Hình Ảnh", en: "Images" },
+  office: { vi: "Văn Phòng", en: "Office" },
+  template: { vi: "Mẫu Video", en: "Templates" },
+};
+
+export function categoryShortLabel(category: string, locale: UiLocale) {
+  const entry = CATEGORY_SHORT_LABELS[category];
+  if (!entry) return categoryLabel(category, locale);
+  return locale === "en" ? entry.en : entry.vi;
+}
 
 export function categoryLabel(category: string, locale: UiLocale) {
   const entry = CATEGORY_LABELS[category];
@@ -221,6 +240,7 @@ const SECTION_TITLES: Record<string, { vi: string; en: string }> = {
   audio: { vi: "Công Cụ Âm Thanh Trực Tuyến", en: "Online Audio Tools" },
   image: { vi: "Công Cụ Hình Ảnh", en: "Image Tools" },
   office: { vi: "Công Cụ Văn Phòng", en: "Office Tools" },
+  template: { vi: "Thư Viện Mẫu Video & Prompt AI", en: "Video Templates & AI Prompt Library" },
 };
 
 export function sectionTitle(category: string, locale: UiLocale) {

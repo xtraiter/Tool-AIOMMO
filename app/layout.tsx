@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+// Absolute canonical/OG URLs for every page (tools and /mau-video) — one domain for all content.
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://tool.allinonemmo.com").replace(/\/+$/, "");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "AIOMMO Studio",
   description: "Bộ công cụ tạo nội dung AI chạy ngay trên trình duyệt của bạn — All In One MMO",
   manifest: "/manifest.webmanifest",
@@ -36,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Apply the saved theme before first paint (dark by default) to avoid a light flash. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("aio-theme");document.documentElement.dataset.theme=t==="light"?"light":"dark"}catch(e){}`,
+            __html: `try{var t=localStorage.getItem("aio-theme");document.documentElement.dataset.theme=t==="light"?"light":"dark";if(localStorage.getItem("aio-sb")==="collapsed")document.documentElement.dataset.sb="collapsed"}catch(e){}`,
           }}
         />
         {CLARITY_ID && (

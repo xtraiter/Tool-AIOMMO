@@ -78,6 +78,7 @@ export function BackgroundRemover() {
     setSaved(Object.fromEntries(BG_TIERS.map((t) => [t.id, flagged(t.id)])));
   }, []);
 
+
   // Render composite to display canvas
   const renderCanvas = useCallback(() => {
     const canvas = canvasRef.current;
